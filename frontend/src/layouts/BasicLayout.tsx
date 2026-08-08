@@ -1,6 +1,7 @@
 import { Layout , Menu} from "antd";
 import {DashboardOutlined, FileTextOutlined, MessageOutlined} from "@ant-design/icons"
 import { Link, Outlet, useLocation } from "react-router-dom";
+import {useMemo} from "react";
 
 const { Header, Sider, Content } = Layout;
 
@@ -9,8 +10,8 @@ const menuItems = [
     {
         key: '/documents',
         icon: <FileTextOutlined />,
-        label: '文档管理',
-        disabled: true,
+        label: <Link to="/documents">文档管理</Link> ,
+
     },
     {
         key: '/chat',
@@ -20,8 +21,19 @@ const menuItems = [
     }
 ]
 
+function resolveSelectedKey(pathname: string): string {
+    // /document/xxx 也保持“文档管理”高亮
+    if (pathname.startsWith("/documents")) return '/documents'
+    if (pathname.startsWith("/chat")) return '/chat'
+    return '/'
+}
+
+
 export function BasicLayout(){
     const location = useLocation();
+    const selectedKey = resolveSelectedKey(location.pathname);
+
+
 
     return (
         <Layout style={{ minHeight: "100vh" }}>
@@ -40,7 +52,7 @@ export function BasicLayout(){
                 <Menu
                     theme="dark"
                     mode="inline"
-                    selectedKeys={[location.pathname]}
+                    selectedKeys={[selectedKey]}
                     items={menuItems}
                 />
 

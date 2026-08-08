@@ -30,3 +30,10 @@ class ConfigurationError(AppException):
     code = "configuration_error"
     message = "服务器配置缺失"
     http_status = HTTPStatus.SERVICE_UNAVAILABLE
+
+class ValidationError(AppException):
+    code = "validation_error"
+    message = "参数校验失败"
+    http_status = HTTPStatus.BAD_REQUEST
+
+
