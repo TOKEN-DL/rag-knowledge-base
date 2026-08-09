@@ -93,6 +93,37 @@ class DocumentChunkRepository:
             avg_length=int(row.avg_len or 0),
             min_length=int(row.min_len or 0),
             max_length=int(row.max_len or 0),
-
-
         )
+
+from sqlalchemy.orm import selectinload
+from app.db.models import Document, DocumentChunk
+
+async def vector_search(
+    self,
+    query_embedding: list[float],
+    top_k: int,
+    ) -> list[tuple[DocumentChunk, float]]:
+    """按 cosine 距离做 Top-K 向量检索。
+
+
+       - 仅检索状态为 ready 的文档（避免拿到尚未完成入库的脏 chunk）
+       - 返回 (chunk, distance) 列表，distance 越小越相似（pgvector cosine_distance）
+       - 用 selectinload 把所属 Document 一并加载，方便上层直接读 document.name
+         而不会再发 N 次 lazy load 查询
+    """
+    # 把用户输入进行向量化
+    distance = DocumentChunk.embedding.cosine_distance(query_embedding)
+    stmt = (
+        select(DocumentChunk, distance.label("distance"))
+        .join(Document, Document.id == DocumentChunk.id)
+        .where(Document.status == "ready")
+        .order_by(distance.asc())
+        .limit(top_k)
+        .options(selectinload(DocumentChunk.document))
+    )
+
+    rows = (await self.session.execute(stmt)).all()
+    # 返回余弦相似度和相应的chunk
+    return [(chunk, float(dist)) for chunk, dist in rows]
+
+
