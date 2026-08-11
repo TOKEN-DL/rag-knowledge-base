@@ -35,7 +35,7 @@ class VectorRetriever:
             RetrievedChunk(
                 chunk_id=chunk.id,
                 document_id=chunk.document_id,
-                document_name=chunk.document_name,
+                document_name=chunk.document.name,
                 content=chunk.content,
                 page_no=chunk.page_no,
                 section_path=chunk.section_path,

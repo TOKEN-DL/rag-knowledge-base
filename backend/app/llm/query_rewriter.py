@@ -34,7 +34,7 @@ class QueryRewriter:
     async def decide_route(self, question: str) -> QueryRoute:
         messages = build_route_messages(question)
         response = await get_chat_model().ainvoke(messages)
-        raw = _extract_text(response.content().strip().lower())
+        raw = _extract_text(response.content.strip().lower())
 
         token = raw.strip("\"'`.。 ")
         if token in _VALID_ROUTES:
@@ -59,8 +59,45 @@ class QueryRewriter:
         queries = [line.strip(" -•*0123456789.、") for line in text.splitlines()]
         return [q for q in queries if q][:n]
 
+
+    async def optimize(self, question: str, multi_query_count: int) -> QueryRouterResult:
+        """按 route 分发并填充结果。任何一步失败都安全降级到 original。"""
+        try:
+            route = await self.decide_route(question)
+            if route == "rewrite":
+                rewritten = await self.rewrite(question)
+                if not rewritten:
+                    return QueryRouterResult(route="original", query=question)
+                return QueryRouterResult(
+                    route="rewrite", query=rewritten, rewritten_query=rewritten
+                )
+            if route == "hyde":
+                hyde_answer = await self.hyde(question)
+                if not hyde_answer:
+                    return QueryRouterResult(route="hyde", query=question)
+                return QueryRouterResult(route="hyde", query=hyde_answer, hyde_answer=hyde_answer)
+            if route == "multi_query":
+                queries = await self.multi_query(question, multi_query_count)
+                if len(queries) < 2:
+                    return QueryRouterResult(route="multi_query", query=question)
+                return QueryRouterResult(route="multi_query", multi_queries=queries)
+            return QueryRouterResult(route="original", query=question)
+        except Exception:
+            logger.exception("query optimize失败，降级到original:question=%r", question)
+            return QueryRouterResult(route="original", query=question)
+
 def _extract_text(content: str | list[str | dict]) -> str:
     """兼容 langchain ChatModel 的 content 联合类型"""
     if isinstance(content, str):
         return content
     return "".join(part.get("text", "") for part in content if isinstance(part, dict))
+
+
+_rewriter: QueryRewriter | None = None
+
+def get_query_rewriter() -> QueryRewriter:
+    """单例调用rewriter"""
+    global _rewriter
+    if _rewriter is None:
+        _rewriter = QueryRewriter()
+    return _rewriter

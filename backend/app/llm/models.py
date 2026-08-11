@@ -23,7 +23,7 @@ def get_chat_model() -> BaseChatModel:
     _chat_model = ChatOpenAI(
         model=settings.chat_model,
         api_key=settings.chat_api_key,
-        base_url=settings.chat_api_base_url,
+        base_url=settings.chat_base_url,
         temperature=0,
         streaming=True
     )

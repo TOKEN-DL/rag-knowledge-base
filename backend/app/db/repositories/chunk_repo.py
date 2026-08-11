@@ -113,7 +113,7 @@ class DocumentChunkRepository:
         distance = DocumentChunk.embedding.cosine_distance(query_embedding)
         stmt = (
             select(DocumentChunk, distance.label("distance"))
-            .join(Document, Document.id == DocumentChunk.id)
+            .join(Document, Document.id == DocumentChunk.document_id)
             .where(Document.status == "ready")
             .order_by(distance.asc())
             .limit(top_k)
