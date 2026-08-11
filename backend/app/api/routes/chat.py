@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterable
+import json
+from typing import AsyncIterable
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -17,6 +18,7 @@ from app.services.chat_service import ChatService
 
 router = APIRouter(prefix="/conversations", tags=["chat"])
 
+
 @router.post(
     "",
     response_model=ConversationRead,
@@ -24,13 +26,14 @@ router = APIRouter(prefix="/conversations", tags=["chat"])
     operation_id="createConversation",
 )
 async def create_conversation(
-        payload: ConversationCreate,
-        session: DbSession,
+    payload: ConversationCreate,
+    session: DbSession,
 ) -> ConversationRead:
     """创建会话"""
     service = ChatService(session)
     conversation = await service.create_conversation(title=payload.title)
     return ConversationRead.model_validate(conversation)
+
 
 @router.get(
     "/{conversation_id}",
@@ -38,9 +41,9 @@ async def create_conversation(
     operation_id="getConversation",
 )
 async def get_conversation(
-        conversation_id: UUID,
-        session: DbSession,
-)-> ConversationDetail:
+    conversation_id: UUID,
+    session: DbSession,
+) -> ConversationDetail:
     """返回会话本身 + 全部历史消息（含引用）。"""
     service = ChatService(session)
     conversation, messages = await service.list_messages(conversation_id)
@@ -49,19 +52,21 @@ async def get_conversation(
         messages=[MessageRead.from_orm(m) for m in messages],
     )
 
+
 @router.post(
     "/{conversation_id}/chat",
+    response_model=None,
     operation_id="streamChat",
-    response_model=EventSourceResponse,
 )
 async def stream_chat(
-        conversation_id: UUID,
-        payload: ChatRequest,
-        session: DbSession,
+    conversation_id: UUID,
+    payload: ChatRequest,
+    session: DbSession,
 ) -> AsyncIterable[ServerSentEvent]:
     """SSE 流式问答。
-        事件协议：message_start → citations → token...(多次) → message_end；
-        任何阶段出错改 yield error。前端用 @microsoft/fetch-event-source 接。
+
+    事件协议：message_start → citations → token...(多次) → message_end；
+    任何阶段出错改 yield error。前端用 @microsoft/fetch-event-source 接。
     """
     service = ChatService(session)
     async for sse_event in service.stream_answer(conversation_id, payload.question):
@@ -69,7 +74,4 @@ async def stream_chat(
             data=sse_event["data"],
             event=sse_event["event"],
         )
-
-
-
 

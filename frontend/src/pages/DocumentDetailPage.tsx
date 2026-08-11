@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import remarkGfm from 'remark-gfm'
+import { gfmComponents } from '@/components/markdownComponents'
 import {
     Alert,
     Button,
@@ -122,7 +124,7 @@ function MarkdownPreview({ url }: { url: string }) {
     if (content === null) return <Skeleton active />
     return (
         <div style={{ padding: 16, maxHeight: 600, overflow: 'auto' }}>
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={gfmComponents}>{content}</ReactMarkdown>
         </div>
     )
 }

@@ -30,7 +30,7 @@ class VectorRetriever:
 
     async def search(self, query: str, top_k: int) -> list[RetrievedChunk]:
         embedding = await get_embeddings().aembed_query(query)
-        rows = await chunk_repo.vector_search(embedding, top_k)
+        rows = await self.chunk_repo.vector_search(embedding, top_k)
         return [
             RetrievedChunk(
                 chunk_id=chunk.id,
