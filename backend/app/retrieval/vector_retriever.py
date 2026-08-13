@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,15 @@ class RetrievedChunk:
     section_path: str | None
     score: float
 
+    # 混合检索支持
+    sources: tuple[str, ...] = field(default_factory=tuple)
+    vector_rank: int | None = None
+    vector_score: float | None = None  # 原始 cosine similarity（向量路命中时填充）
+    keyword_rank: int | None = None
+    keyword_score: float | None = None # 原始 ts_rank（关键词路命中时填充）
+    rrf_score: float | None = None
+
+
 class VectorRetriever:
     def __init__(self, session: AsyncSession) -> None:
         self.chunk_repo = DocumentChunkRepository(session)
@@ -39,9 +48,14 @@ class VectorRetriever:
                 content=chunk.content,
                 page_no=chunk.page_no,
                 section_path=chunk.section_path,
+                # pgvector cosine_distance ∈ [0, 2]；标准化为 similarity
+                # 同方向归一化向量下，distance ∈ [0, 1]，similarity ∈ [0, 1]
                 score=1.0 - distance,
+                sources=("vector",),
+                vector_rank=rank,
+                vector_score=1.0 - distance
 
             )
-            for chunk, distance in rows
+            for rank, (chunk ,distance) in enumerate(rows, start=1)
         ]
 

@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    build:
+      context: .
+      dockerfile: postgres.Dockerfile
+    image: rag-kb-postgres:pg16
     container_name: rag-kb-postgres
     restart: unless-stopped
     environment:
