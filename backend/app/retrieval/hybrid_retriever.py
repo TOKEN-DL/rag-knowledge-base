@@ -90,12 +90,12 @@ def rrf_fuse(
             # 同 chunk 跨两路命中：合并 sources / 累加 RRF 分数
             by_id[hit.chunk_id] = _merge_keyword_into(existing, hit, rank=rank, k=k)
 
-        fused = sorted(
-            by_id.values(),
-            key=lambda c: c.rrf_score or 0.0,
-            reverse=True,
-        )
-        return fused[:top_k]
+    fused = sorted(
+        by_id.values(),
+        key=lambda c: c.rrf_score or 0.0,
+        reverse=True,
+    )
+    return fused[:top_k]
 
 
 

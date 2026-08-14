@@ -29,6 +29,16 @@ class RAGState(TypedDict, total=False):
     # 是否触发拒答
     refused: bool
 
+    # Agentic RAG 循环：plan_retrieval / observe_context 产出
+    # agent_steps 每一项形如 {round, action, reason, route, query, retrieved_count, top_score, sufficient}
+    # 由 plan_retrieval 追加"决策"字段、observe_context 回填"观察"字段，避免分两条记录
+    agent_steps: list[dict]
+    retrieval_round: int
+
+    # observe_context 判定本轮候选是否足够；True 时图走向 END
+    context_sufficient: bool
+
+
     # generate 产出
     answer: str
 

@@ -52,7 +52,8 @@ def _should_refuse(chunks: list[RetrievedChunk]) -> bool:
     return top.vector_score < settings.retrieval_min_score
 
 def _merge_chunks(
-        bundles: list[list[RetrievedChunk]], top_k: int
+    bundles: list[list[RetrievedChunk]],
+    top_k: int
 ) -> list[RetrievedChunk]:
     """多路召回结果去重 + 取 Top-K。
         同一个 chunk 可能在多条子查询中都命中；这里保留最高 score，
