@@ -129,8 +129,8 @@ def _with_keyword(hit: RetrievedChunk, *, rank: int, k: int) -> RetrievedChunk:
         section_path=hit.section_path,
         score=rrf_score,
         sources=("keyword",),
-        vector_rank=rank,
-        vector_score=hit.vector_score,
+        keyword_rank=rank,
+        keyword_score=hit.vector_score,
         rrf_score=rrf_score,
     )
 

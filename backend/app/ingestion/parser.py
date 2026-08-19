@@ -1,6 +1,6 @@
 import asyncio
 import io
-from typing import List
+from pathlib import Path
 
 from docling.datamodel.base_models import DocumentStream
 from docling.document_converter import DocumentConverter
@@ -34,14 +34,20 @@ def _convert_sync(filename: str, content: bytes) -> str:
     result = _get_converter().convert(source)
     return result.document.export_to_markdown()
 
+# markdown/纯文本本身就是目标格式，过 Docling 往返会损坏链接与表格
+_PASSTHROUGH_SUFFIXES = {".md", ".markdown", ".txt"}
 
 async def parse(filename: str, content: bytes) -> list[Document]:
     """解析并转化成langchain的Document列表"""
-    try:
-        markdown = await asyncio.to_thread(_convert_sync, filename,  content)
-    except Exception as exc:
-        logger.exception("docling parser failed %s", filename)
-        raise DocumentParserError(f"Docling解析失败：{exc}") from exc
+    # 解析错误更正
+    if Path(filename).suffix.lower() in _PASSTHROUGH_SUFFIXES:
+        markdown = content.decode("utf-8", errors="replace")
+    else:
+        try:
+            markdown = await asyncio.to_thread(_convert_sync, filename,  content)
+        except Exception as exc:
+            logger.exception("docling parser failed %s", filename)
+            raise DocumentParserError(f"Docling解析失败：{exc}") from exc
 
     if not markdown.strip():
         raise DocumentParserError("解析结果为空，文档可能损坏或者不支持")

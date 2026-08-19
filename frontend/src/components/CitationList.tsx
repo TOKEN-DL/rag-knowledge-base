@@ -19,12 +19,13 @@ export const CitationList = forwardRef<CitationListHandle, CitationListProps>(
     function CitationList({ citations, messageId }, ref) {
 // Collapse 受控 activeKey：保持用户已展开的项不被点击新引用时折叠回去
         const [activeKey, setActiveKey] = useState<string[]>([])
+
         useImperativeHandle(
             ref,
             () => ({
                 expandAndScroll: (n: number) => {
-// 用 ordinal 而非数组下标定位：保证 markdown 里写的 [N] 永远精确指向
-// ordinal=N 的那条引用，即使 citations 数组顺序意外变化也不会串号
+                    // 用 ordinal 而非数组下标定位：保证 markdown 里写的 [N] 永远精确指向
+                    // ordinal=N 的那条引用，即使 citations 数组顺序意外变化也不会串号
                     const target = citations.find((c) => c.ordinal === n)
                     if (!target) return
                     const key = panelKey(target)
@@ -40,11 +41,26 @@ export const CitationList = forwardRef<CitationListHandle, CitationListProps>(
         )
 
         if (citations.length === 0) return null
-        const items = citations.map((c) => ({
+
+
+        const items = citations.map((c) => {
+            const sourceTag = formatSourceTag(c.retrieval_meta?.sources)
+            const rerankScore =c.retrieval_meta?.rerank_score
+            return {
             key: panelKey(c),
             label: (
                 <span id={anchorId(messageId, c.ordinal)}>
                     <Tag color="blue" style={{ marginInlineEnd: 8 }}>{`[${c.ordinal}]`}</Tag>
+                    {sourceTag ? (
+                        <Tag color={sourceTag.color}  style={{ marginInlineEnd: 8}}>
+                        {sourceTag.label}
+                            </Tag>
+                    ) : null}
+                    {rerankScore != null ? (
+                        <Tag color="gold" style={{ marginInlineEnd: 8 }}>
+                            {`rerank ${rerankScore.toFixed(2)}`}
+                        </Tag>
+                    ) : null}
                     {c.document_id ? (
                         <Link to={`/documents/${c.document_id}`}>{c.document_name}</Link>
                     ) : (
@@ -63,7 +79,8 @@ export const CitationList = forwardRef<CitationListHandle, CitationListProps>(
                     {c.quote}
                 </Paragraph>
             ),
-        }))
+            }
+        })
 
         return (
             <Collapse
@@ -86,4 +103,16 @@ function anchorId(messageId: string, n: number): string {
  * 保证同一 assistant 消息内 key 唯一且稳定。 */
 function panelKey(c: CitationRead): string {
     return c.id || `ord-${c.ordinal}`
+}
+
+type SourceTagMeta = { color: string; label: string }
+
+function formatSourceTag(sources?: string[]): SourceTagMeta | null {
+    if (!sources || sources.length === 0) return null
+    const hasVector = sources.includes('vector')
+    const hasKeyword = sources.includes('keyword')
+    if (hasVector && hasKeyword) return { color: 'purple', label: '混合' }
+    if (hasVector) return { color: 'blue', label: '向量' }
+    if (hasKeyword) return { color: 'orange', label: '关键词' }
+    return null
 }

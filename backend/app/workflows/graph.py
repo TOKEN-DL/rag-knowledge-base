@@ -6,9 +6,11 @@ from app.workflows.nodes import (
     normalize_query,
     observe_context,
     plan_retrieval,
-    stream_generate,
     route_query,
     retrieve,
+    judge_context,
+    rerank,
+    refuse
 )
 
 from app.workflows.rag_state import RAGState
@@ -26,19 +28,29 @@ def _after_plan(state: RAGState) -> str:
     return "retrieve"
 
 def _after_observe(state: RAGState) -> str:
-    """observe 后决定继续循环还是结束。
-        结束条件（任一即停）：
-        - 关闭了 agent loop（退化为单轮）
-        - 本轮已足够（context_sufficient=True）
-        - 达到 agent_max_rounds 上限
+    """observe 后决定继续循环还是结束循环交给 rerank 精排。
+    退出循环条件（任一即停）：
+    - 关闭了 agent loop（退化为单轮）
+    - 本轮已足够（context_sufficient=True）
+    - 达到 agent_max_rounds 上限
+    退出循环后统一进 rerank（不再直接 END）：哪怕本轮 sufficient=False，
+    也走完 rerank → judge_context，让 judge_context 一处统一拒答闸门。
     """
     if not settings.agent_loop_enabled:
-        return "end"
+        return "rerank"
     if state.get("context_sufficient"):
-        return "end"
+        return "rerank"
     if state.get("retrieval_round", 0) >= settings.agent_max_rounds:
-        return "end"
+        return "rerank"
     return "plan"
+
+def _after_judge(state: RAGState) -> str:
+    """judge_context 后的最终闸门：上下文足够 → END；不足 → refuse 节点。"""
+    if state.get("context_is_enough"):
+        return "end"
+    return "refuse"
+
+
 
 
 # 画图
@@ -52,20 +64,31 @@ def _build_graph():
     builder.add_node("plan_retrieval", plan_retrieval)
     builder.add_node("retrieve", retrieve)
     builder.add_node("observe_context", observe_context)
+    builder.add_node("rerank", rerank)
+    builder.add_node("judge_context", judge_context)
+    builder.add_node("refuse", refuse)
     # 边
     builder.add_edge(START, "normalize_query")
     builder.add_edge("normalize_query", "route_query")
     builder.add_edge("route_query", "plan_retrieval")
     # 判断节点 检索还是直接输出
     builder.add_conditional_edges(
-        "plan_retrieval", _after_plan, {"retrieve": "retrieve", "end": END}
+        "plan_retrieval",
+                _after_plan,
+        {"retrieve": "retrieve", "refuse": "refuse"},
     )
     builder.add_edge("retrieve", "observe_context")
     # 判断节点 根据观察的额结果判断是返回plan还是结束
     builder.add_conditional_edges(
         "observe_context",
         _after_observe,
-        {"plan": "plan_retrieval", "end": END},
+        {"plan": "plan_retrieval", "rerank": "rerank"},
+    )
+    builder.add_edge("rerank", "judge_context")
+    builder.add_conditional_edges(
+        "judge_context",
+        _after_judge,
+        {"end": END, "refuse": "refuse"},
     )
 
     return builder.compile()

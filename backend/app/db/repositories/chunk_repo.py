@@ -34,7 +34,7 @@ class DocumentChunkRepository:
         await self.session.flush()
 
     async def delete_by_document(self, document_id: UUID) -> None:
-        stmt = delete(DocumentChunk).where(DocumentChunk.id == document_id)
+        stmt = delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
         await self.session.execute(stmt)
 
     async def list_paginated_by_document(
@@ -46,7 +46,7 @@ class DocumentChunkRepository:
         offset = (page - 1) * page_size
         items_stmt = (
             select(DocumentChunk)
-            .where(DocumentChunk.id == document_id)
+            .where(DocumentChunk.document_id == document_id)
             .order_by(DocumentChunk.chunk_index.asc())
             .offset(offset)
             .limit(page_size)
@@ -85,12 +85,12 @@ class DocumentChunkRepository:
             func.avg(length).label("avg_len"),
             func.min(length).label("min_len"),
             func.max(length).label("max_len"),
-        ).where(DocumentChunk.id == document_id)
+        ).where(DocumentChunk.document_id == document_id)
         row = (await self.session.execute(stmt)).one()
         if not row.total:
             return None
         return ChunkStats(
-            total=int(row.toal),
+            total=int(row.total),
             avg_length=int(row.avg_len or 0),
             min_length=int(row.min_len or 0),
             max_length=int(row.max_len or 0),

@@ -136,7 +136,7 @@ interface ChunksQueryResult {
         | {
         items: DocumentChunkRead[]
         total: number
-        stats?:
+        status?:
             | {
             total: number
             avg_length: number
@@ -169,18 +169,18 @@ function ChunksSection({
     if (chunksQuery.isLoading || !chunksQuery.data) {
         return <Skeleton active />
     }
-    const { items, total, stats } = chunksQuery.data
+    const { items, total, status } = chunksQuery.data
     if (total === 0) {
         return <Empty description="没有 chunk" />
     }
     return (
         <>
-            {stats ? (
+            {status ? (
                 <Space size="large" style={{ marginBottom: 16 }} wrap>
-                    <Statistic title="切片总数" value={stats.total} />
-                    <Statistic title="平均字符数" value={stats.avg_length} />
-                    <Statistic title="最短" value={stats.min_length} />
-                    <Statistic title="最长" value={stats.max_length} />
+                    <Statistic title="切片总数" value={status.total} />
+                    <Statistic title="平均字符数" value={status.avg_length} />
+                    <Statistic title="最短" value={status.min_length} />
+                    <Statistic title="最长" value={status.max_length} />
                 </Space>
             ) : null}
             <List<DocumentChunkRead>

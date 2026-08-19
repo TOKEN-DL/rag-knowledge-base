@@ -47,7 +47,7 @@ class DocumentChunkRead(BaseModel):
     def from_orm_chunk(cls, chunk) -> "DocumentChunkRead": # type: ignore[no-untyped-def]
         content = chunk.content or ""
         excerpt = content[:_CONTENT_EXCERPT_LIMIT]
-        if len(excerpt) > _CONTENT_EXCERPT_LIMIT:
+        if len(content) > _CONTENT_EXCERPT_LIMIT:
             excerpt += "..."
         return cls(
             id=chunk.id,
@@ -55,7 +55,7 @@ class DocumentChunkRead(BaseModel):
             page_no=chunk.page_no,
             section_path=chunk.section_path,
             content_excerpt=excerpt,
-            char_count=len(excerpt),
+            char_count=len(content),
             chunk_hash=chunk.chunk_hash,
         )
 

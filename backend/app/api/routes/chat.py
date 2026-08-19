@@ -75,3 +75,55 @@ async def stream_chat(
             event=sse_event["event"],
         )
 
+
+from fastapi import Query, Response
+from app.api.schemas.chat import (
+    ConversationListItem,
+    ConversationPage
+)
+
+
+# 获取会话列表
+@router.get(
+    "",
+    response_model=ConversationPage,
+    operation_id="listConversations",
+    summary="按更新时间倒序分页列出所有会话"
+)
+async def list_conversations(
+    session: DbSession,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> ConversationPage:
+    service = ChatService(session)
+    items, total = await service.list_conversations(page, page_size)
+    return ConversationPage(
+        items=[
+            ConversationListItem(
+                id=conv.id,
+                title=conv.title,
+                updated_at=conv.updated_at,
+                message_count=count,
+            )
+            for conv, count in items
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+# 删除会话
+@router.delete(
+    "/{conversation_id}",
+    status_code=204,
+    operation_id="deleteConversation",
+)
+async def delete_conversation(
+    conversation_id: UUID,
+    session: DbSession,
+) -> Response:
+    service = ChatService(session)
+    await service.delete_conversation(conversation_id)
+    return Response(status_code=204)
+
+
