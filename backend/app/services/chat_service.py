@@ -1,3 +1,4 @@
+from langsmith import traceable
 from mako.testing.assertions import assert_raises_with_given_cause
 from sqlalchemy.ext.asyncio import AsyncSession
 from sympy.physics.units import years
@@ -28,6 +29,7 @@ from app.workflows.nodes import load_context, stream_generate
 from app.workflows.rag_state import RAGState
 from app.llm.answer_verifier import VerifyResult, get_answer_verifier
 from app.llm.prompts import REFUSAL_ANSWER
+from app.core.observability import build_trace_url, get_current_trace_id
 
 logger = get_logger(__name__)
 
@@ -100,7 +102,7 @@ class ChatService:
         await self.session.commit()
 
 
-
+    @traceable(name="ChatService.stream_answer", run_type="chain")
     async def stream_answer(
             self,
             conversation_id: UUID,
@@ -121,9 +123,13 @@ class ChatService:
 
         async with AsyncSessionLocal() as session:
             try:
+                # 取 LangSmith trace_id：@traceable 已经为本次 stream_answer 建好 root run，
+                # 这里读到的就是整次问答的 trace_id；未启用观测时返回 None
+                trace_id = get_current_trace_id()
                 state: RAGState = {
                     "conversation_id": conversation_id,
                     "question": question,
+                    "trace_id": trace_id,
                 }
                 # 1. 加载上下文（仅历史消息，本轮 user 此刻尚未入库）+ 改写查询 + 路由
                 # load_context 是唯一需要 DB session 的节点，由 service 先填好再交给图。
@@ -142,7 +148,11 @@ class ChatService:
                 # 类似于工作流总的日志消息
                 yield {
                     "event": "message_start",
-                    "data": {"user_message_id": str(state["user_message_id"])},
+                    "data": {
+                        "user_message_id": str(state["user_message_id"]),
+                        "trace_id": trace_id,
+                        "trace_url": build_trace_url(trace_id),
+                    },
                 }
 
                 # 3.把query路由结果推送更黑前端调试面板（始终发送，前端按route选择渲染）

@@ -15,10 +15,12 @@ from app.api.error_handlers import register_error_handlers  # noqa: E402
 from app.api.routes import health, documents, chat  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.logging import configure_logging, get_logger  # noqa: E402
+from app.core.observability import configure_observability
 
 
 def create_app() -> FastAPI:
     configure_logging()
+    configure_observability()
     logger = get_logger(__name__)
 
 

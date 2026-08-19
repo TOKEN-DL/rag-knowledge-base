@@ -55,7 +55,7 @@ async def get_conversation(
 
 @router.post(
     "/{conversation_id}/chat",
-    response_model=None,
+    response_class=EventSourceResponse,
     operation_id="streamChat",
 )
 async def stream_chat(

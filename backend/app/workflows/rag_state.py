@@ -49,3 +49,7 @@ class RAGState(TypedDict, total=False):
     user_message_id: UUID
     assistant_message_id: UUID
 
+    # LangSmith trace_id：未启用观测 / 取不到 run tree 时为 None
+    # 仅由 service 层 stream_answer 进入 @traceable 上下文后写入，节点不感知
+    trace_id: str | None
+

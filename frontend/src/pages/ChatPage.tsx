@@ -17,14 +17,15 @@ import remarkGfm from 'remark-gfm'
 import { createConversation, getConversation } from '@/client/sdk.gen'
 import type { AgentStep,CitationRead, MessageRead, QueryRouteRead, VerifyResultRead, } from '@/client/types.gen'
 import { streamChat, type ChatStreamEvent } from '@/api/chatStream'
-import { conversationsQueryKey} from "@/api/queryKeys"
+
+import { conversationsQueryKey} from '@/api/queryKeys.ts'
 import { AgentStepsPanel} from "@/components/AgentStepsPanel.tsx"
 import { gfmComponents } from '@/components/markdownComponents'
 import { CitationList, type CitationListHandle } from '@/components/CitationList'
 import { formatApiError } from '@/utils/errors'
 import { QueryRoutePanel } from "@/components/QueryRoutePanel.tsx"
 import { ConversationSidebar} from "@/components/ConversationSidebar.tsx";
-import { Layoyt, Tag } from "antd"
+import { Tag } from "antd"
 const { Sider, Content} = Layout
 
 const REFUSAL_ANSWER = "抱歉，知识库中没有找到与该问题相关的可靠依据"
@@ -90,6 +91,17 @@ export function ChatPage() {
             await queryClient.invalidateQueries({ queryKey: conversationsQueryKey })
         },
     })
+        // 没有 conversation_id 时自动创建一个
+//     useEffect(() => {
+//         if (!conversationId && !createMutation.isPending) {
+//             createMutation.mutate()
+//         }
+// // eslint-disable-next-line react-hooks/exhaustive-deps
+//     }, [conversationId])
+
+
+
+
 
     const handleNewConversation = () => {
         abortRef.current?.abort()
@@ -121,25 +133,25 @@ export function ChatPage() {
 
 
     // 创建会话：第一次进入页面 / 点"新建对话"时调用
-    const createMutation = useMutation({
-        mutationFn: async () => {
-            const res = await createConversation({ body: { title: '新对话' } })
-            return res.data!
-        },
-        onSuccess: (conversation) => {
-            localStorage.setItem(STORAGE_KEY, conversation.id)
-            setConversationId(conversation.id)
-            setPendingMessages([])
-            queryClient.removeQueries({ queryKey: ['conversation'] })
-        },
-    })
-    // 没有 conversation_id 时自动创建一个
-    useEffect(() => {
-        if (!conversationId && !createMutation.isPending) {
-            createMutation.mutate()
-        }
-// eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [conversationId])
+//     const createMutation = useMutation({
+//         mutationFn: async () => {
+//             const res = await createConversation({ body: { title: '新对话' } })
+//             return res.data!
+//         },
+//         onSuccess: (conversation) => {
+//             localStorage.setItem(STORAGE_KEY, conversation.id)
+//             setConversationId(conversation.id)
+//             setPendingMessages([])
+//             queryClient.removeQueries({ queryKey: ['conversation'] })
+//         },
+//     })
+//     // 没有 conversation_id 时自动创建一个
+//     useEffect(() => {
+//         if (!conversationId && !createMutation.isPending) {
+//             createMutation.mutate()
+//         }
+// // eslint-disable-next-line react-hooks/exhaustive-deps
+//     }, [conversationId])
 
 
     // 拉取历史消息
@@ -175,10 +187,10 @@ export function ChatPage() {
     }, [])
 
 
-    const handleNewConversation = () => {
-        abortRef.current?.abort()
-        createMutation.mutate()
-    }
+    // const handleNewConversation = () => {
+    //     abortRef.current?.abort()
+    //     createMutation.mutate()
+    // }
 
     const updateAssistant = (updater: (prev: UiMessage) => UiMessage) => {
         setPendingMessages((prev) => {
@@ -259,7 +271,7 @@ export function ChatPage() {
                             updateAssistant((prev) => ({
                                 ...prev,
                                 status: 'done',
-                                refused: pre.refused || event.refused,
+                                refused: prev.refused || event.refused,
                             }))
 
                             break
@@ -339,7 +351,23 @@ export function ChatPage() {
                         background: '#fafafa',
                     }}
                 >
-                    ......输入框区域，不用变动
+                    <TextArea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="输入你的问题，按 Enter 发送，Shift+Enter 换行"
+                        autoSize={{ minRows: 2, maxRows: 6 }}
+                        disabled={!conversationId || isStreaming}
+                    />
+                    <Button
+                        type="primary"
+                        icon={<SendOutlined />}
+                        onClick={handleSend}
+                        loading={isStreaming}
+                        disabled={!conversationId || !draft.trim()}
+                    >
+                        发送
+                    </Button>
                 </div>
             </Content>
         </Layout>
@@ -512,7 +540,7 @@ function MessageBubble({ message }: MessageBubbleProps) {
                 {message.error ? (
                     <Alert type="error" message={message.error} style={{ marginBottom: 8 }} />
                 ) : null}
-                {!isUser && <AssistantHeader message={message} /> : null}
+                {!isUser ? <AssistantHeader message={message} /> : null}
                 {message.content ? (
                     isUser ? (
                         <Text style={{ whiteSpace: 'pre-wrap' }}>{message.content}</Text>

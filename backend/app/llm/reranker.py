@@ -1,6 +1,8 @@
 import dataclasses
 from typing import Any
 import httpx
+from langsmith import traceable
+
 from app.core.config import settings
 from app.core.exceptions import ConfigurationError
 from app.core.logging import get_logger
@@ -24,6 +26,7 @@ class Reranker:
         return self._client
 
     # 初步筛选后，rerank再做一层筛选
+    @traceable(name="Rerank.rerank", run_type="retriever")
     async def rerank(
             self, query: str, candidates: list[RetrievedChunk]
     ) -> list[RetrievedChunk]:
@@ -74,7 +77,7 @@ class Reranker:
         client = self._get_client()
         # 发送http请求拿结果json
         response = await client.post(
-            settings.rerank_api_url, json=payload, headers=headers
+            settings.rerank_base_url, json=payload, headers=headers
         )
         response.raise_for_status()
         # 反序列化
@@ -83,7 +86,7 @@ class Reranker:
         if not isinstance(results, list) or len(results) == 0:
             raise ValueError(f"rerank 响应缺少 results： {data!r}")
 
-        scores = list[float] = [0.0] * len(candidates)
+        scores: list[float] = [0.0] * len(candidates)
         for item in results:
             idx = item.get("index")
             score = item.get("relevance_score")
