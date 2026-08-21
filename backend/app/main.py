@@ -12,10 +12,11 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from app.api.error_handlers import register_error_handlers  # noqa: E402
-from app.api.routes import health, documents, chat  # noqa: E402
+from app.api.routes import health, documents, chat, evaluations  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.core.logging import configure_logging, get_logger  # noqa: E402
 from app.core.observability import configure_observability
+
 
 
 def create_app() -> FastAPI:
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
+    app.include_router(evaluations.router, prefix="/api")
 
     logger.info("app initialized: %s", settings.app_name)
     return app

@@ -1,8 +1,9 @@
 from langsmith import traceable
-from mako.testing.assertions import assert_raises_with_given_cause
 from sqlalchemy.ext.asyncio import AsyncSession
-from sympy.physics.units import years
-from sympy.utilities.misc import ordinal
+from dataclasses import dataclass, field
+import time
+
+from sympy.integrals.risch import NonElementaryIntegral
 
 from app.core.config import settings
 from app.retrieval.vector_retriever import RetrievedChunk
@@ -49,6 +50,33 @@ def _serialize_citation(chunk: RetrievedChunk, ordinal: int) -> dict:
         "quote": chunk.content,
         "retrieval_meta": _build_retrieval_meta(chunk)
     }
+
+@dataclass(frozen=True)
+class EvaluationAnswer:
+    """评测专用：跑一遍 RAG 拿到的非流式结果快照。
+   与 stream_answer 不同：不写 conversations / messages，避免评测污染线上历史。
+   chunks 直接给原始 RetrievedChunk，便于上层算 RAGAS retrieved_contexts。
+   """
+    answer: str
+    refused: bool
+    chunks: list[RetrievedChunk]
+    query_route: dict
+    agent_steps: list[dict]
+    verify_result: VerifyResult | None
+    trace_id: str | None
+    latency_ms: int
+    # 首 token 延迟（毫秒）：从 stream_answer 开始到 LLM 吐出第一个 token 为止
+    # 拒答路径 / 报错时为 None
+    first_token_latency_ms: int | None
+    error_message: str | None = None
+    citations: list[dict] = field(default_factory=list)
+
+
+
+
+
+
+
 
 class ChatService:
     """注意：
@@ -100,6 +128,92 @@ class ChatService:
         if not deleted:
             raise NotFoundError("会话不存在")
         await self.session.commit()
+
+
+
+
+    @traceable(name="ChatService.answer_for_evaluation", run_type="chain")
+    async def answer_for_evaluation(self, question: str) -> EvaluationAnswer:
+        """跑一遍完整 RAG 拿非流式结果，用于离线评测。
+        与 stream_answer 区别：
+        - 不创建 conversation，不落 user/assistant 消息（评测不污染线上历史）
+        - chat_history 强制空：评测集每条独立，第 8 章 contextualize 改写自动跳过
+        - 把流式 token 聚合成完整 answer 后再做 verify_answer 校验
+        - 失败时把 error_message 落到 EvaluationAnswer，由调用方决定怎么记录
+        """
+        started_at = time.perf_counter()
+        trace_id = get_current_trace_id()
+        state: RAGState = {
+            "conversation_id": UUID(int=0),
+            "question": question,
+            "chat_history": [],
+            "trace_id": trace_id,
+        }
+
+        try:
+            final_state = await get_rag_graph().ainvoke(state)
+            state.update(final_state)
+
+            verify_result: VerifyResult | None = None
+            first_token_latency_ms: int | None = None
+            if state.get("refused"):
+                answer = state["answer"]
+            else:
+                parts: list[str] = []
+                async for delta in stream_generate(state):
+                    if first_token_latency_ms is None:
+                        first_token_latency_ms = int(
+                            (time.perf_counter() - started_at) * 1000
+                        )
+                    parts.append(delta)
+                answer = "\n".join(parts)
+                state["answer"] = answer
+
+                if settings.verify_answer_enabled:
+                    verify_result = await get_answer_verifier().verify(
+                        question=question,
+                        answer=answer,
+                        chunks=list(state.get("retrieved_chunks", [])),
+                    )
+                    if not verify_result.verified:
+                        answer = REFUSAL_ANSWER
+                        state["answer"] = answer
+                        state["refused"] = True
+            chunks = list(state.get("retrieved_chunks", []))
+            refused = bool(state.get("refused"))
+            citations = (
+                []
+                if refused
+                else [_serialize_citation(c, ordinal=i) for i, c in enumerate(chunks, 1)]
+            )
+
+
+            return EvaluationAnswer(
+                answer=answer,
+                refused=refused,
+                chunks=chunks,
+                query_route=_build_query_route_payload(state),
+                agent_steps=_serialize_agent_steps(state),
+                verify_result=verify_result,
+                trace_id=trace_id,
+                latency_ms=int((time.perf_counter() - started_at) * 1000),
+                first_token_latency_ms=first_token_latency_ms,
+                citations=citations,
+            )
+        except Exception as exc:
+            logger.exception("evaluation answer failed: question=%r", question)
+            return EvaluationAnswer(
+                answer="",
+                refused=False,
+                chunks=[],
+                query_route=_build_query_route_payload(state),
+                agent_steps=_serialize_agent_steps(state),
+                verify_result=None,
+                trace_id=trace_id,
+                latency_ms=int((time.perf_counter() - started_at) * 1000),
+                first_token_latency_ms=None,
+                error_message=str(exc).strip() or exc.__class__.__name__,
+            )
 
 
     @traceable(name="ChatService.stream_answer", run_type="chain")
@@ -286,6 +400,8 @@ class ChatService:
             "refused": bool(state.get("refused")),
             "query_route": _build_query_route_payload(state),
             "agent_steps": _serialize_agent_steps(state),
+            # LangSmith trace_id 落库，刷新历史时前端仍可展示 / 跳转
+            "trace_id": state.get("trace_id"),
         }
         if verify_result is not None:
             # verify_result 复用 SSE 载荷格式，但 metadata 不需要 replacement_answer

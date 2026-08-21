@@ -26,6 +26,8 @@ import { formatApiError } from '@/utils/errors'
 import { QueryRoutePanel } from "@/components/QueryRoutePanel.tsx"
 import { ConversationSidebar} from "@/components/ConversationSidebar.tsx";
 import { Tag } from "antd"
+import { TraceIdPanel } from "@/components/TraceIdPanel.tsx";
+
 const { Sider, Content} = Layout
 
 const REFUSAL_ANSWER = "抱歉，知识库中没有找到与该问题相关的可靠依据"
@@ -45,6 +47,8 @@ interface UiMessage {
     queryRoute?: QueryRouteRead | null
     agentSteps?: AgentStep[] | null
     verifyResult?: VerifyResultRead | null
+    traceId?: string | null
+    traceUrl?: string | null
     refused?: boolean
     status?: AssistantStatus
     error?: string | null
@@ -58,6 +62,8 @@ function fromServerMessage(m: MessageRead): UiMessage {
         queryRoute: m.query_route ?? null,
         agentSteps: m.agent_steps ?? null,
         verifyResult: m.verify_result ?? null,
+        traceId: m.trace_id ?? null,
+        traceUrl: m.trace_url ?? null,
         // 历史消息：直接按"内容是否等于固定拒答文案"判定，与后端 metadata.refused 等价
         refused: m.role === 'assistant' && m.content === REFUSAL_ANSWER,
         status: 'done',
@@ -235,6 +241,11 @@ export function ChatPage() {
                 onEvent: (event: ChatStreamEvent) => {
                     switch (event.type) {
                         case 'start':
+                            updateAssistant((prev) => ({
+                                ...prev,
+                                traceId: event.traceId,
+                                traceUrl: event.traceUrl,
+                            }))
                             break
                         case 'query_route':
                             updateAssistant((prev) => ({...prev, queryRoute: event.queryRoute}))
@@ -553,6 +564,9 @@ function MessageBubble({ message }: MessageBubbleProps) {
                     <Text type="secondary">
                         <Spin size="small" /> 正在思考...
                     </Text>
+                ) : null}
+                {!isUser && message.traceId ? (
+                    <TraceIdPanel traceId={message.traceId} traceUrl={message.traceUrl} />
                 ) : null}
                 {!isUser && message.queryRoute ? (
                     <QueryRoutePanel queryRoute={message.queryRoute}/>
