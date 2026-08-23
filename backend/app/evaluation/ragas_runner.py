@@ -2,7 +2,6 @@ import asyncio
 import warnings
 from dataclasses import dataclass
 
-from langsmith import expect
 
 # ragas 0.4 把 metrics import 路径迁到 collections，但小写实例 API 在 v1.0 前都可用；
 # 这里集中静默 DeprecationWarning，避免污染日志，等 ragas 1.0 发布后再升级
@@ -16,6 +15,9 @@ from ragas.metrics import (
     context_recall,
     faithfulness
 )
+
+
+
 
 from app.core.logging import get_logger
 from app.ingestion.embedder import get_embeddings
@@ -76,14 +78,14 @@ async def evaluate_batch(samples: list[RagasSample]) -> list[RagasMetrics]:
             metrics=_METRICS,
             llm=get_chat_model(),
             embeddings=get_embeddings(),
-            raise_exception=False,
+            raise_exceptions=False,
             show_progress=False,
         )
     except Exception:
         logger.exception("<UNK> RAGAS <UNK>")
         return [_empty_metrics() for _ in samples]   # 辅助函 空指标
 
-    return _extract_metrics(result, rexpected=len(samples))  #辅助函数 _extract_metrics
+    return _extract_metrics(result, expected=len(samples))  #辅助函数 _extract_metrics
 
 # 提取指标
 def _extract_metrics(result, expected: int) -> list[RagasMetrics]:
@@ -94,17 +96,19 @@ def _extract_metrics(result, expected: int) -> list[RagasMetrics]:
         )
 
 
-        metrics: list[RagasMetrics] = []
-        for i in range(expected):
-            row = rows[i] if i < len(rows) else {}
-            metrics.append(
-                RagasMetrics(
-                    faithfulness=_pick(row, "faithfulness"),    # F  从raw里提取指标分数
-                    answer_relevancy=_pick(row, "answer_relevancy"),
-                    context_precision=_pick(row, "context_precision"),
-                    context_recall=_pick(row, "context_recall"),
-                )
+    metrics: list[RagasMetrics] = []
+    for i in range(expected):
+        row = rows[i] if i < len(rows) else {}
+        metrics.append(
+            RagasMetrics(
+                faithfulness=_pick(row, "faithfulness"),    # F  从raw里提取指标分数
+                answer_relevancy=_pick(row, "answer_relevancy"),
+                context_precision=_pick(row, "context_precision"),
+                context_recall=_pick(row, "context_recall"),
             )
+        )
+    return metrics
+
 
 
 def _pick(row: dict, key: str) -> float | None:

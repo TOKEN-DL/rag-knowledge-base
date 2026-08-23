@@ -2,7 +2,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from annotated_types.test_cases import cases
 
 from app.core.exceptions import NotFoundError, ValidationError
 

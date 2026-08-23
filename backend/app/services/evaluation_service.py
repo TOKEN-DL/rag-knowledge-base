@@ -200,7 +200,7 @@ async def _run_single_case(run_id: UUID, case) -> None:
 
         item = EvaluationItem(
             run_id=run_id,
-            case_id=case.id,
+            case_id=case.case_id,
             question=case.question,
             expected_answer=case.expected_answer,
             expected_document_names=case.expected_document_names,
@@ -288,7 +288,7 @@ async def _finalize_run(run_id: UUID) -> None:
         run = await EvaluationRunRepository(session).get(run_id)
         if run is not None:
             # 计算各指标的平均数
-            run.faithfulness = _avg([i.faithfulenss for i in items])   #F: 计算平均数
+            run.faithfulness = _avg([i.faithfulness for i in items])   #F: 计算平均数
             run.answer_relevancy = _avg([i.answer_relevancy for i in items])
             run.context_precision = _avg([i.context_precision for i in items])
             run.context_recall = _avg([i.context_recall for i in items])
