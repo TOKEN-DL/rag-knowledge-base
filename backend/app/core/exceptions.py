@@ -37,3 +37,15 @@ class ValidationError(AppException):
     http_status = HTTPStatus.BAD_REQUEST
 
 
+class UnauthorizedError(AppException):
+    """未认证 / 凭证无效；前端拦截 401 会清登录态并跳转 /login。"""
+    code = "unauthorized"
+    message = "请先登录"
+    http_status = HTTPStatus.UNAUTHORIZED
+
+class ConflictError(AppException):
+    code = "conflict"
+    message = "资源冲突"
+    http_status = HTTPStatus.CONFLICT
+
+

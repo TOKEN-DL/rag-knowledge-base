@@ -1,5 +1,5 @@
 from enum import Enum
-
+from sqlalchemy.dialects.postgresql import ARRAY
 
 class DocumentStatus(str, Enum):
     """文档生命周期状态
@@ -61,6 +61,21 @@ class Document(Base):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 创建时间更新时间，标配
+
+    # 空数组视为“公开”，任意登录用户可见可检索
+    # 用于兼容之前上传的存量文档
+    # 非空数组与用户有效权限标签做数组重叠匹配（admin 持“*”适配）
+    permission_tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String()), nullable=False, default=list, server_default="{}"
+    )
+
+    # 上传者；用户被硬删除后该字段为NULL，文档历史仍保留
+    created_by: Mapped[UUID |None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -139,6 +154,12 @@ class Conversation(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="新对话")
     # user_id 后面引入用户体系时再加列
+    user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=False,
+        index=True,
+    )
 
 
     created_at: Mapped[datetime] = mapped_column(
@@ -332,3 +353,89 @@ class EvaluationItem(Base):
     )
 
     run: Mapped[EvaluationRun] = relationship(back_populates="items")
+
+
+from sqlalchemy import (
+Column,
+Table,
+)
+
+
+
+
+class UserStatus(str, Enum):
+    """用户启用状态。"""
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+# 用户 - 角色 多对多关系表。
+# 不抽成 ORM 类是因为本身没有业务字段，纯关系；用 Table 让 SQLAlchemy 自动处理。
+user_roles_table = Table(
+    "user_roles",
+    Base.metadata,
+    Column(
+    "user_id",
+    PGUUID(as_uuid=True),
+    ForeignKey("users.id", ondelete="CASCADE"),
+    primary_key=True,
+    ),
+    Column(
+    "role_id",
+    PGUUID(as_uuid=True),
+    ForeignKey("roles.id", ondelete="CASCADE"),
+    primary_key=True,
+    ),
+)
+
+
+class User(Base):
+    """用户主表。"""
+    __tablename__ = "users"
+    id: Mapped[UUID] = mapped_column(
+    PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # bcrypt hash，约 60 字符；预留 255 兼容未来切换算法
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[UserStatus] = mapped_column(
+    String(16), nullable=False, default=UserStatus.ACTIVE
+    )
+    created_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True),
+    server_default=func.now(),
+    onupdate=func.now(),
+    nullable=False,
+    )
+    roles: Mapped[list["Role"]] = relationship(
+    secondary=user_roles_table,
+    back_populates="users",
+    lazy="selectin",
+)
+
+
+
+class Role(Base):
+    """RBAC 角色。
+    permission_tags：角色直接持有的权限标签数组；用户的有效权限 = 各角色 tags 的并集。
+    特殊值 "*" 表示通配（admin）。
+    """
+    __tablename__ = "roles"
+    id: Mapped[UUID] = mapped_column(
+    PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    permission_tags: Mapped[list[str]] = mapped_column(
+    ARRAY(String()), nullable=False, default=list, server_default="{}"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+    DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    users: Mapped[list[User]] = relationship(
+    secondary=user_roles_table,
+    back_populates="roles",
+)
