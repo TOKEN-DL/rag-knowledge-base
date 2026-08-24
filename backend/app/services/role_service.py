@@ -44,14 +44,14 @@ class RoleService:
 
     async def update_role(self, role_id: UUID, *,
                           description: str,
-                          permission_tag: list[str]
+                          permission_tags: list[str]
                           ) -> Role:
         role = await self.get_role(role_id)
 
         if description is not None:
             role.description = description.strip()
-        if permission_tag is not None:
-            role.permission_tags = _normalize_tags(permission_tag)  #F
+        if permission_tags is not None:
+            role.permission_tags = _normalize_tags(permission_tags)  #F
         await self.session.commit()
         return role
 
