@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import Depends
+from langsmith import PermissionDeniedError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 
@@ -13,7 +14,7 @@ DbSession = Annotated[AsyncSession, Depends(get_session)]
 
 # 从Bearer token解出user_id、查用户、判断admin
 
-from app.core.exceptions import PermissionDeniedError, UnauthorizedError
+from app.core.exceptions import PermissionError, UnauthorizedError
 from app.core.security import decode_access_token
 from app.db.models import User, UserStatus
 from app.db.repositories.user_repo import UserRepository
@@ -63,7 +64,7 @@ async def get_current_admin(
 ) -> User:
     """仅admin可通过。普通用户403"""
     if not is_admin(user):
-        raise PermissionDeniedError("仅管理员可以访问")
+        raise PermissionError("仅管理员可以访问")
     return user
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

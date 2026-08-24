@@ -2,11 +2,11 @@
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.util import await_only
+
 
 from app.core.exceptions import NotFoundError, ValidationError, ConflictError
 from app.db.models import User, Role
-from app.db.repositories.user_repo import RoleRepository
+from app.db.repositories.role_repo import RoleRepository
 
 PROTECTED_ROLE_NAMES = frozenset({"admin", "user"})
 
