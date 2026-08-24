@@ -17,7 +17,22 @@ from app.core.config import settings  # noqa: E402
 from app.core.logging import configure_logging, get_logger  # noqa: E402
 from app.core.observability import configure_observability
 
+from app.db.seed import seed_default_admin
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """应用生命周期钩子：启动时做种子初始化。"""
+    logger = get_logger(__name__)
+    if not settings.jwt_secret:
+        logger.error("JWT_SECRET 未配置，登录功能将不可用")
+    try:
+        # 默认创建默认admin用户
+        await seed_default_admin()
+    except Exception:
+        logger.exception("种子初始化失败；后续可重新启动重试")
+    yield
 
 def create_app() -> FastAPI:
     configure_logging()
