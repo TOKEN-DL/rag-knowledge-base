@@ -13,6 +13,7 @@ from app.workflows.rag_state import RAGState
 async def retrieve(state: RAGState) -> RAGState:
     retriever = HybridRetriever()   # 改造成混合检索
     recall_top_k = settings.retrieval_recall_top_k
+    permissions = state.get("permissions")
     # final_top_k = settings.retrieval_top_k
 
     if state.get("route") == "multi_query" and state.get("multi_queries"):
@@ -23,14 +24,18 @@ async def retrieve(state: RAGState) -> RAGState:
                 await retriever.search(
                     sub_query,
                     recall_top_k=recall_top_k,
-                    final_top_k=recall_top_k,))
+                    final_top_k=recall_top_k,
+                    permission_tags=permissions,
+                ))
         # chunks = _merge_chunks(bundles, top_k=final_top_k)
         chunks = _merge_chunks(bundles, top_k=recall_top_k)
     else:
         chunks = await retriever.search(
             state["query"],
             recall_top_k=recall_top_k,
-            final_top_k=recall_top_k,)
+            final_top_k=recall_top_k,
+            permission_tags=permissions,
+        )
 
     # 删除拒答逻辑，之后交给refuse节点来完成
     # 检索为空 / 最高相似度过低 → 直接拒答；不再调 LLM

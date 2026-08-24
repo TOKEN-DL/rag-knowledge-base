@@ -16,6 +16,25 @@ from sqlalchemy import and_, or_
 WILDCARD_PERMISSION_TAG = "*"
 
 
+def _permission_where(permission_tags: list[str] | None) -> ColumnElement[bool] | None:
+    """构造文档可见性 WHERE 条件。
+    - None：调用方（评测 / 启动期种子）显式不限制
+    - 含 "*"：admin 通配，不加条件
+    - 其他：'空权限标签视为公开' OR '数组重叠'
+    返回 None 表示不附加任何额外 WHERE；非 None 时由调用方 .where() 拼上。
+    """
+    if permission_tags is None:
+        return None
+    if WILDCARD_PERMISSION_TAG in permission_tags:
+        return None
+    return or_(
+        func.cardinality(Document.permission_tags) == 0,
+        Document.permission_tags.op("&&")(permission_tags),
+    )
+
+
+
+
 
 
 
@@ -105,10 +124,14 @@ class DocumentChunkRepository:
             max_length=int(row.max_len or 0),
         )
 
+    # 向量检索和关键词检索都要加 permission_tags
+
     async def vector_search(
         self,
         query_embedding: list[float],
         top_k: int,
+        *,
+        permission_tags: list[str] | None = None,
     ) -> list[tuple[DocumentChunk, float]]:
         """按 cosine 距离做 Top-K 向量检索。
 
@@ -120,6 +143,16 @@ class DocumentChunkRepository:
         """
         # 把用户输入进行向量化
         distance = DocumentChunk.embedding.cosine_distance(query_embedding)
+
+        # 加入权限
+        conditions: list[ColumnElement[bool]] = [
+            Document.status == "ready",
+        ]
+        perm_where = _permission_where(permission_tags)
+        if perm_where is not None:
+            conditions.append(perm_where)
+
+
         stmt = (
             select(DocumentChunk, distance.label("distance"))
             .join(Document, Document.id == DocumentChunk.document_id)
@@ -137,6 +170,8 @@ class DocumentChunkRepository:
             self,
             query: str,
             top_k: int,
+            *,
+            permission_tags: list[str] | None = None,
     ) -> list[tuple[DocumentChunk, float]]:
         """中文全文检索 Top-K：plainto_tsquery + ts_rank。
                 - 用 chinese_zh 文本搜索配置（zhparser 切词，迁移里建好）
@@ -147,6 +182,16 @@ class DocumentChunkRepository:
         """
         tsquery = func.plainto_tsquery("chinese_zh",query)
         rank_expr = func.ts_rank(DocumentChunk.content_tsv, tsquery)
+
+        conditions: list[ColumnElement[bool]] = [
+            Document.status == "ready",
+            DocumentChunk.content_tsv.op("@@")(tsquery),
+        ]
+        perm_where = _permission_where(permission_tags)
+        if perm_where is not None:
+            conditions.append(perm_where)
+
+
         stmt = (
             select(DocumentChunk, rank_expr.label("rank"))
             .join(Document, Document.id == DocumentChunk.document_id)
