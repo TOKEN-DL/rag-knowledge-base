@@ -8,3 +8,63 @@ from app.db.session import get_session
 
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
+
+
+
+# 从Bearer token解出user_id、查用户、判断admin
+
+from app.core.exceptions import PermissionDeniedError, UnauthorizedError
+from app.core.security import decode_access_token
+from app.db.models import User, UserStatus
+from app.db.repositories.user_repo import UserRepository
+from fastapi import Header
+from app.services.permission_service import is_admin
+
+
+def _parse_bearer_token(authorization: str | None) -> str:
+    """从 Authorization header 取出 Bearer token；缺失或格式错误统一 401。"""
+    if not authorization:
+        raise UnauthorizedError("请先登录")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise UnauthorizedError("无效的访问凭证")
+    return token
+
+
+async def get_current_user(
+        session: AsyncSession = Depends(get_session),
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> User:
+    """解析 Bearer token，查表拿到 User。
+    每个请求都重新查一次而不是把信息塞进 token：
+    - 角色 / 状态变更后立即生效，不必等 token 自然过期
+    - token 内只放 user_id，泄露 token 也拿不到额外用户信息
+    """
+    token = _parse_bearer_token(authorization)
+    subject = decode_access_token(token)
+
+    try:
+        from uuid import UUID
+        user_id = UUID(subject)
+    except (ValueError, TypeError) as exc:
+        raise UnauthorizedError("无效的访问凭证") from exc
+
+
+    user = await UserRepository(session).get_by_id(user_id)
+    if user is None:
+        raise UnauthorizedError("用户不存在或已经被删除")
+    if user.status != UserStatus.ACTIVE:
+        raise UnauthorizedError("账号已经被禁用")
+    return user
+
+
+async def get_current_admin(
+        user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    """仅admin可通过。普通用户403"""
+    if not is_admin(user):
+        raise PermissionDeniedError("仅管理员可以访问")
+    return user
+
+CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentAdmin = Annotated[User, Depends(get_current_admin)]

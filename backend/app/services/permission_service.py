@@ -22,7 +22,7 @@ def compute_user_permission_tags(user: User) -> list[str]:
     return sorted(merged)
 
 
-def is_admin(role: Role) -> bool:
+def is_admin(user: User) -> bool:
     """是否拥有 admin 角色（按角色名识别，不依赖通配标签，便于学员理解）。"""
     return any(role.name == ADMIN_ROLE_NAME for role in user.roles)
 
