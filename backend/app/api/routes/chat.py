@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from fastapi.responses import EventSourceResponse
 from fastapi.sse import ServerSentEvent
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, CurrentUser
 from app.api.schemas.chat import (
     ChatRequest,
     ConversationCreate,
@@ -26,12 +26,13 @@ router = APIRouter(prefix="/conversations", tags=["chat"])
     operation_id="createConversation",
 )
 async def create_conversation(
+    user: CurrentUser,
     payload: ConversationCreate,
     session: DbSession,
 ) -> ConversationRead:
     """创建会话"""
     service = ChatService(session)
-    conversation = await service.create_conversation(title=payload.title)
+    conversation = await service.create_conversation(user_id=user.id,title=payload.title)
     return ConversationRead.model_validate(conversation)
 
 

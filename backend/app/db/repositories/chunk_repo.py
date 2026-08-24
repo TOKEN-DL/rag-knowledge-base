@@ -10,6 +10,15 @@ from app.db.models import Document, DocumentChunk
 
 from dataclasses import dataclass
 
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy import and_, or_
+# 通配权限标签：admin 角色持有，含义"无视权限过滤"
+WILDCARD_PERMISSION_TAG = "*"
+
+
+
+
+
 
 
 @dataclass

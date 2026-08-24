@@ -1,6 +1,7 @@
 from typing import TypedDict
 from uuid import UUID
 from typing import Literal, TypedDict
+\
 
 from app.db.models import Message
 from app.retrieval.vector_retriever import RetrievedChunk
@@ -11,6 +12,9 @@ class RAGState(TypedDict, total=False):
     # 输入
     conversation_id: UUID
     question: str
+
+    # 用户有效权限标签，由service在进图前注入
+    permissions: list[str]
 
     # load_context 产出
     chat_history: list[Message]

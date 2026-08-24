@@ -4,6 +4,7 @@ from urllib.parse import unquote
 from uuid import UUID
 
 from fastapi import BackgroundTasks, UploadFile
+from numpy.random.mtrand import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -16,6 +17,7 @@ from app.db.repositories.chunk_repo import (
 )
 from app.db.repositories.document_repo import DocumentRepository
 from app.ingestion.pipeline import ingest_document
+from app.services.role_service import _normalize_tags
 from app.storage.file_service import FileService, get_file_service
 
 # 受支持的 MIME 类型。
@@ -63,6 +65,10 @@ _DELETABLE_STATUSES = frozenset(
 
 logger = get_logger(__name__)
 
+
+
+# 通过给Document的管理方法添加上permission_tags
+# 实现有相关权限的用户才能访问
 class DocumentService:
     def __init__(self, session: AsyncSession, file_service: FileService | None = None) -> None:
         self.session = session
@@ -71,7 +77,14 @@ class DocumentService:
         self.file_service = file_service or get_file_service()
 
 
-    async def upload(self, file: UploadFile, background_tasks: BackgroundTasks) -> Document:
+    async def upload(
+            self,
+            file: UploadFile,
+            background_tasks: BackgroundTasks,
+            *,
+            create_by: UUID | None = None,
+            permission_tags: Sequence[str] | None = None,
+    ) -> Document:
         """上传文件操作
         1.MIME / 大小检验
         2.计算sha246(content)作为file_hash
@@ -125,6 +138,8 @@ class DocumentService:
             cos_object_key=object_key,
             cos_region=self.file_service.region,
             status=DocumentStatus.UPLOADING,
+            permission_tags=_normalize_tags(permission_tags), #F
+            created_by=create_by,
         )
         # 操作数据库，文件增加
         await self.repo.add(document)
@@ -137,9 +152,25 @@ class DocumentService:
 
         return document
 
-    async def get(self, document_id: UUID) -> Document:
-        """获取文档"""
+
+    async def update_permission_tags(
+            self,
+            document_id: UUID,
+            tags: Sequence[str] | None = None,
+    ) ->Document:
+        """admin 修改文档可见性标签。"""
         doc = await self.repo.get_by_id(document_id)
+        if doc is None:
+            raise NotFoundError("文档不存在")
+        doc.permission_tags = _normalize_tags(tags)
+        await self.session.commit()
+        await self.session.refresh(doc)
+        return doc
+
+
+    async def get(self, document_id: UUID, * , permission_tags: list[str] | None = None,) -> Document:
+        """获取文档"""
+        doc = await self.repo.get_by_id(document_id, permission_tags=permission_tags)
         if doc is None:
             raise NotFoundError("文档不存在")
         return doc
@@ -150,9 +181,12 @@ class DocumentService:
             page_size: int,
             *,
             status: DocumentStatus | None = None,
+            permission_tags: list[str] | None = None
     ) -> tuple[list[Document], int]:
         """获取文档列表"""
-        return await self.repo.list_paginated(page, page_size, status=status)
+        return await self.repo.list_paginated(
+            page, page_size, status=status, permission_tags=permission_tags
+        )
 
 
     async def delete(self, document_id: UUID) -> None:
@@ -198,10 +232,11 @@ class DocumentService:
             document_id: UUID,
             page: int,
             page_size: int,
+            *, permission_tags: list[str] | None = None
     ) -> tuple[list[DocumentChunk], int, ChunkStats | None]:
         """获取多个我chunk"""
 
-        await self.get(document_id)
+        await self.get(document_id, permission_tags=permission_tags)
         # 根据id获取对应文档的chunk
         items, total = await self.chunk_repo.list_paginated_by_document(
             document_id, page, page_size
@@ -210,8 +245,10 @@ class DocumentService:
         status = await self.chunk_repo.get_stats(document_id)
         return items, total, status
 
-    async def get_chunk(self, document_id: UUID, chunk_id: UUID)-> DocumentChunk:
+    async def get_chunk(self, document_id: UUID, chunk_id: UUID, * , permission_tags: list[str] | None = None)-> DocumentChunk:
         """获取单个chunk"""
+        # 双重校验：先确保用户能看到 document，再校验 chunk 归属
+        await self.get(document_id, permission_tags=permission_tags)
         chunk = await self.chunk_repo.get_by_document(document_id, chunk_id)
         if chunk is None:
             raise NotFoundError("Chunk不存在")

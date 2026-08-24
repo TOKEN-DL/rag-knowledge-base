@@ -31,6 +31,11 @@ from app.workflows.rag_state import RAGState
 from app.llm.answer_verifier import VerifyResult, get_answer_verifier
 from app.llm.prompts import REFUSAL_ANSWER
 from app.core.observability import build_trace_url, get_current_trace_id
+from app.db.models import User
+from app.services.permission_service import (
+WILDCARD_PERMISSION_TAG,
+compute_user_permission_tags,
+)
 
 logger = get_logger(__name__)
 
@@ -88,7 +93,7 @@ class ChatService:
         self.session = session
 
 
-    async def create_conversation(self, title: str = "新对话") -> Conversation:
+    async def create_conversation(self, title: str = "新对话", * , user_id: UUID | None = None) -> Conversation:
         """创建会话"""
         repo = ConversationRepository(self.session)
         conversation = await repo.create(title=title)
@@ -96,7 +101,7 @@ class ChatService:
         await self.session.refresh(conversation)
         return conversation
 
-    async def get_conversation(self, conversation_id: UUID) -> Conversation:
+    async def get_conversation(self, conversation_id: UUID,* , user_id: UUID | None = None) -> Conversation:
         """获取会话"""
         repo = ConversationRepository(self.session)
         conversation = await repo.get(conversation_id)
@@ -106,7 +111,7 @@ class ChatService:
 
     async def list_messages(
             self,
-            conversation_id: UUID,
+            conversation_id: UUID, * , user_id: UUID | None = None
     ) -> tuple[Conversation, list[Message]]:
         """获取会话对应的消息列表"""
         conversation = await self.get_conversation(conversation_id)
@@ -116,13 +121,13 @@ class ChatService:
 
     # 会话列表展示
     async def list_conversations(
-            self, page: int, page_size: int
+            self, page: int, page_size: int, * , user_id: UUID | None = None
     ) -> tuple[list[tuple[Conversation,int]], int]:
         repo = ConversationRepository(self.session)
         return await repo.list_page(page=page, page_size=page_size)
 
     # 会话删除
-    async def delete_conversation(self, conversation_id: UUID) -> None:
+    async def delete_conversation(self, conversation_id: UUID, * , user_id: UUID | None = None) -> None:
         repo = ConversationRepository(self.session)
         deleted = await repo.delete(conversation_id)
         if not deleted:
@@ -147,6 +152,7 @@ class ChatService:
             "conversation_id": UUID(int=0),
             "question": question,
             "chat_history": [],
+            "permissions": [WILDCARD_PERMISSION_TAG],
             "trace_id": trace_id,
         }
 
@@ -220,7 +226,10 @@ class ChatService:
     async def stream_answer(
             self,
             conversation_id: UUID,
-            question: str) -> AsyncIterator[dict]:
+            question: str,
+            *,
+            current_user: User,
+    ) -> AsyncIterator[dict]:
         """逐事件 yield SSE 载荷。
         事件协议（与前端约定）：
             message_start → query_route → agent_steps → citations → token...
@@ -233,7 +242,8 @@ class ChatService:
         # 对话主要输出的是事件event和数据data
 
         # 校验会话存在用 service 自带 session；流式跑用独立 session
-        await self.get_conversation(conversation_id)
+        await self.get_conversation(conversation_id, user_id=current_user.id)
+        permissions = compute_user_permission_tags(current_user)
 
         async with AsyncSessionLocal() as session:
             try:
@@ -243,6 +253,7 @@ class ChatService:
                 state: RAGState = {
                     "conversation_id": conversation_id,
                     "question": question,
+                    "permissions": permissions,
                     "trace_id": trace_id,
                 }
                 # 1. 加载上下文（仅历史消息，本轮 user 此刻尚未入库）+ 改写查询 + 路由

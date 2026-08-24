@@ -15,7 +15,10 @@ from app.api.schemas.evaluations import (
 )
 from app.services.evaluation_service import EvaluationService, execute_evaluation_run
 
-router = APIRouter(prefix="/evaluations", tags=["evaluations"])
+from  app.api.deps import DbSession, get_current_admin
+from fastapi import Depends
+
+router = APIRouter(prefix="/evaluations", tags=["evaluations"], dependencies=[Depends(get_current_admin)])
 
 
 @router.get(
