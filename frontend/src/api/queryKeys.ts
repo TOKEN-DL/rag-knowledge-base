@@ -14,3 +14,9 @@ export const evaluationItemsKey = (
     filters: { badCaseOnly: boolean; category: string | null; page: number },
  ) => ['evaluation-items', runId, filters] as const
 export const evaluationDatasetsKey = ['evaluation-datasets'] as const
+
+export const currentUserKey = ['auth', 'me'] as const
+export const userListKey = (page: number, pageSize: number) =>
+    ['users', {page, pageSize}] as const
+export const rolesListKey = ['roles'] as const
+

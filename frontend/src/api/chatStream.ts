@@ -2,8 +2,6 @@ import { fetchEventSource } from '@microsoft/fetch-event-source'
 import type { AgentStep, CitationRead, QueryRouteRead } from '@/client/types.gen'
 
 
-
-
 export interface ChatStartEvent {
     type: 'start'
     /** LangSmith trace_id；未启用观测时为 null */
@@ -71,22 +69,37 @@ interface StreamChatParams {
 
 class FatalSseError extends Error {}
 
+
+import {getAuthToken, useAuthStore } from "@/stores/authStore.ts";
 export async function streamChat({
     conversationId,
     question,
     signal,
     onEvent,
 }: StreamChatParams): Promise<void> {
+    const token = getAuthToken()
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) {
+        headers.Authorization = `Bearer ${token}`
+    }
     await fetchEventSource(
         `/api/conversations/${conversationId}/chat`,
         {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ question }),
             signal,
 // 默认会在 tab 切换到后台时关闭连接，问答场景不希望中断
             openWhenHidden: true,
             async onopen(response) {
+                if (response.status === 401) {
+                    useAuthStore.getStatus().logout()
+                    if (window.location.pathname !== '/login') {
+                        const back = window.location.pathname + window.location.search
+                        window.location.replace(`/login?back=${encodeURIComponent(back)}`)
+                    }
+                    throw new FatalSseError("请先登录")
+                }
                 if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
                     return
                 }
