@@ -32,9 +32,12 @@ def _viewer_tags(user) -> list[str] | None:
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
+from app.api.deps import RateLimited
+
 @router.post("",response_model=DocumentRead, status_code=201, operation_id="uploadDocument")
 async def upload_document(
         admin: CurrentAdmin,
+        _rate_limit: RateLimited,
         session: DbSession,
         background_tasks: BackgroundTasks,
         file: UploadFile = File(...,description="等待上传文档(PDF / DOCX / Markdown / HTML)"),

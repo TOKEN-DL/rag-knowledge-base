@@ -16,6 +16,7 @@ from app.api.schemas.chat import (
 )
 from app.services.chat_service import ChatService
 
+
 router = APIRouter(prefix="/conversations", tags=["chat"])
 
 
@@ -42,24 +43,27 @@ async def create_conversation(
     operation_id="getConversation",
 )
 async def get_conversation(
+    user: CurrentUser,
     conversation_id: UUID,
     session: DbSession,
 ) -> ConversationDetail:
     """返回会话本身 + 全部历史消息（含引用）。"""
     service = ChatService(session)
-    conversation, messages = await service.list_messages(conversation_id)
+    conversation, messages = await service.list_messages(conversation_id, user_id=user.id)
     return ConversationDetail(
         conversation=ConversationRead.model_validate(conversation),
         messages=[MessageRead.from_orm(m) for m in messages],
     )
 
-
+from app.api.deps import RateLimited
 @router.post(
     "/{conversation_id}/chat",
     response_class=EventSourceResponse,
     operation_id="streamChat",
 )
 async def stream_chat(
+    user: CurrentUser,
+    _rate_limit: RateLimited,
     conversation_id: UUID,
     payload: ChatRequest,
     session: DbSession,
@@ -92,12 +96,13 @@ from app.api.schemas.chat import (
     summary="按更新时间倒序分页列出所有会话"
 )
 async def list_conversations(
+    user: CurrentUser,
     session: DbSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ) -> ConversationPage:
     service = ChatService(session)
-    items, total = await service.list_conversations(page, page_size)
+    items, total = await service.list_conversations(page, page_size, user_id=user.id)
     return ConversationPage(
         items=[
             ConversationListItem(
@@ -120,11 +125,12 @@ async def list_conversations(
     operation_id="deleteConversation",
 )
 async def delete_conversation(
+    user: CurrentUser,
     conversation_id: UUID,
     session: DbSession,
 ) -> Response:
     service = ChatService(session)
-    await service.delete_conversation(conversation_id)
+    await service.delete_conversation(conversation_id, user_id=user.id)
     return Response(status_code=204)
 
 

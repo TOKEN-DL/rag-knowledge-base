@@ -246,6 +246,8 @@ class ChatService:
             question: str,
             *,
             current_user: User,
+
+
     ) -> AsyncIterator[dict]:
         """逐事件 yield SSE 载荷。
         事件协议（与前端约定）：

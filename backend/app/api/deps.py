@@ -67,5 +67,23 @@ async def get_current_admin(
         raise PermissionError("仅管理员可以访问")
     return user
 
+
+from app.core.config import settings
+from app.core.rate_limiter import get_rate_limiter
+
+async def enforce_rate_limit(
+        user: Annotated[User, Depends(get_current_user)],
+) -> None:
+    """滑动窗口限流：按 user_id 维度，每分钟最多 RATE_LIMIT_PER_MINUTE 次。
+
+     挂载在 chat / upload / reindex 等写接口；读接口（list / get）不挂以避免
+     前端列表 3s 轮询触发误伤。匿名 / API Key 入口的限流
+    """
+    if not settings.rate_limit_enabled:
+        return
+    await get_rate_limiter().check(f"user:{user.id}")
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
+RateLimited = Annotated[None, Depends(get_rate_limiter)]
