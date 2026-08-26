@@ -3,14 +3,15 @@ from pathlib import PurePath
 from urllib.parse import unquote
 from uuid import UUID
 
-from fastapi import BackgroundTasks, UploadFile
+# from fastapi import BackgroundTasks, UploadFile
+from fastapi import UploadFile
 from numpy.random.mtrand import Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
-from app.db.models import Document, DocumentChunk, DocumentStatus
+from app.db.models import Document, DocumentChunk, DocumentStatus, IngestionTaskType
 from app.db.repositories.chunk_repo import (
     ChunkStats,
     DocumentChunkRepository,
@@ -19,6 +20,9 @@ from app.db.repositories.document_repo import DocumentRepository
 from app.ingestion.pipeline import ingest_document
 from app.services.role_service import _normalize_tags
 from app.storage.file_service import FileService, get_file_service
+
+from app.db.repositories.ingestion_task_repo import IngestionTaskRepository
+from app.ingestion.tasks import ingest_document_task, reindex_document_task
 
 # 受支持的 MIME 类型。
 _ACCEPTED_MIME_TYPES: dict[str, str] = {
@@ -29,6 +33,7 @@ _ACCEPTED_MIME_TYPES: dict[str, str] = {
 "text/html": ".html",
 "application/xhtml+xml": ".html",
 }
+
 _ACCEPTED_SUFFIXES: dict[str, str] = {
 ".pdf": "application/pdf",
 ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -74,13 +79,14 @@ class DocumentService:
         self.session = session
         self.repo = DocumentRepository(session)
         self.chunk_repo = DocumentChunkRepository(session)
+        self.task_repo = IngestionTaskRepository(session)
         self.file_service = file_service or get_file_service()
 
 
     async def upload(
             self,
             file: UploadFile,
-            background_tasks: BackgroundTasks,
+            #background_tasks: BackgroundTasks,
             *,
             create_by: UUID | None = None,
             permission_tags: Sequence[str] | None = None,
@@ -143,12 +149,16 @@ class DocumentService:
         )
         # 操作数据库，文件增加
         await self.repo.add(document)
+        task = await self.task_repo.create(document.id, IngestionTaskType.INGEST)
         # 提交
         await self.session.commit()
         #刷新
         await self.session.refresh(document)
 
-        background_tasks.add_task(ingest_document, document.id)
+        # background_tasks.add_task(ingest_document, document.id)
+
+        # commit 之后 Celery worker 用独立 session 才能查到刚落库的 document / task
+        ingest_document_task.delay(str(document.id), str(task.id))
 
         return document
 
@@ -208,7 +218,7 @@ class DocumentService:
         await self.file_service.delete(object_key)
         logger.info("document delete: id=%s", document_id)
 
-    async def retry(self, document_id: UUID, background_tasks: BackgroundTasks) -> Document:
+    async def retry(self, document_id: UUID) -> Document:
         """若是文件传输失败failed，则重新触发ingest"""
         doc = await self.repo.get_by_id(document_id)
         if doc is None:
@@ -219,11 +229,14 @@ class DocumentService:
         await self.chunk_repo.delete_by_document(document_id)
         doc.status = DocumentStatus.UPLOADING
         doc.error_message = None
+        task = await self.task_repo.create(doc.id, IngestionTaskType.INGEST)
         await self.session.commit()
         await self.session.refresh(doc)
 
 
-        background_tasks.add_task(ingest_document, doc.id)
+        # background_tasks.add_task(ingest_document, doc.id)
+        # 把任务交给celery执行
+        ingest_document_task.delay(str(document_id), str(task.id))
         logger.info("document retry schedule：id=%s", document_id)
         return doc
 

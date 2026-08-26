@@ -41,7 +41,7 @@ async def upload_document(
         admin: CurrentAdmin,
         _rate_limit: RateLimited,
         session: DbSession,
-        background_tasks: BackgroundTasks,
+        # background_tasks: BackgroundTasks,
         file: UploadFile = File(...,description="等待上传文档(PDF / DOCX / Markdown / HTML)"),
         permission_tags: str | None = Form(
             default=None,
@@ -59,7 +59,7 @@ async def upload_document(
             tags = [str(t) for t in parsed]
 
     service = DocumentService(session)
-    document = await service.upload(file, background_tasks, create_by=admin.id, permission_tags=tags)
+    document = await service.upload(file, create_by=admin.id, permission_tags=tags)
     return DocumentRead.model_validate(document)
 
 
