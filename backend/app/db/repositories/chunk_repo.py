@@ -205,6 +205,29 @@ class DocumentChunkRepository:
         raws = (await self.session.execute(stmt)).all()
         return [(chunk, float(rank)) for chunk, rank in raws]
 
+    async def delete_by_ids(self, chunk_ids: Sequence[UUID]) -> None:
+        """按 id 批量删除：增量索引「删除失效 chunks」用。"""
+        if not chunk_ids:
+            return
+        stmt = delete(DocumentChunk).where(DocumentChunk.id.in_(chunk_ids))
+        await self.session.execute(stmt)
+
+
+    async def list_all_by_document(
+            self,
+            document_id: UUID
+    ) -> list[DocumentChunk]:
+        """拉取一篇文档的全部 chunks。
+        增量索引比对旧 chunk_hash 用；文档 chunks 数量上限受 splitter 控制
+        （单文档 50MB → 数百条 chunk 量级），一次性加载内存可承受。
+        """
+        stmt = (
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+            .order_by(DocumentChunk.chunk_index.asc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
 
 
 

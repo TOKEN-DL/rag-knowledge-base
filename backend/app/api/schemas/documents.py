@@ -10,6 +10,27 @@ from app.db.models import DocumentChunk
 # 生成精确的字面量联合类型，而不是宽 string
 DocumentStatusValue = Literal["uploading", "parsing", "indexing", "ready", "failed"]
 
+IngestionTaskTypeValue = Literal["ingest", "reindex"]
+IngestionTaskStatusValue = Literal["pending", "running", "success", "failed"]
+
+
+class IngestionTaskRead(BaseModel):
+    """单条入库任务快照（详情页「最近一次任务」卡片用）。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    task_type: IngestionTaskTypeValue
+    status: IngestionTaskStatusValue
+    retry_count: int
+    error_message: str | None = None
+    progress_total: int
+    progress_done: int
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime
+
+
 class DocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -20,6 +41,10 @@ class DocumentRead(BaseModel):
     size: int
     status: DocumentStatusValue
     error_message: str | None = None
+    # 每次 reindex成功 + 1 ，列表与详情都张氏
+    version: int = 1
+    # 最近一次入库任务进度，前端轮询时展示状态卡片
+    latest_task: IngestionTaskRead | None = None
     permission_tags: list[str] = Field(default_factory=list)
     created_by: UUID | None = None
     created_at: datetime
@@ -81,8 +106,6 @@ class DocumentChunkListResponse(BaseModel):
 
 class DocumentChunkDetail(BaseModel):
     """chunk详情内容，返回完整content"""
-
-
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     document_id: UUID
@@ -110,6 +133,9 @@ class DocumentChunkDetail(BaseModel):
 class DocumentPermissionTagsUpdate(BaseModel):
     """admin 改文档可见性标签的请求体。"""
     permission_tags: list[str] = Field(default_factory=list)
+
+
+
 
 
 

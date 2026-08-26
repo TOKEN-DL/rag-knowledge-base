@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
-from app.db.models import Document, DocumentChunk, DocumentStatus, IngestionTaskType
+from app.db.models import Document, DocumentChunk, DocumentStatus, IngestionTaskType, IngestionTask
 from app.db.repositories.chunk_repo import (
     ChunkStats,
     DocumentChunkRepository,
@@ -266,6 +266,80 @@ class DocumentService:
         if chunk is None:
             raise NotFoundError("Chunk不存在")
         return chunk
+
+    from app.ingestion.tasks import reindex_document_task
+
+    async def reindex(
+            self,
+            document_id: UUID,
+            file: UploadFile,
+    ) -> Document:
+        """用新文件替换原文档并触发增量重建。
+
+        - 只允许 READY / FAILED 状态触发，避免与正在进行的 ingest 抢资源
+        - 文件 MIME 必须与原文档一致：避免「PDF 文档被 Markdown 覆盖」造成的
+          预览 / 下载链路状态混乱
+        - 新文件覆盖到 COS 的同一个 object_key，version+1 由 worker 在 reindex
+          成功后才提交，避免失败的话用户列表里看到版本号但内容没变
+        """
+        doc = await self.repo.get_by_id(document_id)
+        if doc is None:
+            raise NotFoundError("文档不存在")
+        if doc.status not in {DocumentStatus.READY, DocumentStatus.FAILED}:
+            raise ValidationError("文档处理中，请等待完成或者失败后再重新索引")
+
+        mime_type, suffix = _resolve_mime_and_suffix(file)   # 检验文档
+        if mime_type != doc.mime_type:
+            raise ValidationError(f"新版本文件类型与原文档一致（当前为 {doc.mime_type} ）")
+
+        # 读取文件
+        content = await file.read()
+        max_bytes = settings.upload_max_size_mb * 1024 * 1024
+        if len(content) == 0:
+            raise ValidationError("上传文件为空")
+        if len(content) > max_bytes:
+            raise ValidationError(f"文件超过 {settings.upload_max_size_mb} MB上限")
+
+        new_hash = hashlib.sha256(content).hexdigest()
+        if new_hash == doc.file_hash:
+            # 内容完全一致没有重建必要，避免学员误操作浪费 embedding 配额
+            raise ValidationError("文件内容与现有版本一致， 无需重新索引")
+
+        # 文件上传
+        new_object_key = await self.file_service.upload(
+            content=content,
+            file_hash=new_hash,
+            suffix=suffix,
+            mime_type=mime_type,
+        )
+
+        doc.file_hash = new_hash
+        doc.size = len(content)
+        doc.cos_object_key = new_object_key
+        doc.cos_bucket = self.file_service.bucket
+        doc.cos_region = self.file_service.region
+        doc.status = DocumentStatus.PARSING
+        doc.error_message = None
+        if file.filename:
+            doc.name = file.filename
+
+        # 异步任务创建
+        task = await self.task_repo.create(doc.id, IngestionTaskType.REINDEX)
+        await self.session.commit()
+        await self.session.refresh(doc)
+
+        # 重索引任务启动
+        reindex_document_task.delay(str(document_id), str(task.id))
+        logger.info("document reindex scheduled: id=%s", document_id)
+        return doc
+
+
+
+    async def get_latest_task(self, document_id: UUID) -> IngestionTask | None:
+        return await self.task_repo.get_latest_by_document(document_id)
+
+
+
 
 
 
