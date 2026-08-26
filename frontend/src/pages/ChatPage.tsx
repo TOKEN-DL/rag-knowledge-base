@@ -503,7 +503,7 @@ function AssistantHeader({ message }: { message: UiMessage }) {
         )
     }
     if (tags.length === 0) return null
-    return <div style={{ marginBottom: 8}}>{{tags}}</div>
+    return <div style={{ marginBottom: 8}}>{tags}</div>
 }
 
 interface MessageBubbleProps {

@@ -25,7 +25,7 @@ export function LoginPage() {
             const result = await login(values.username, values.password)
             setAuth(result.token, result.user)
             message.success(`欢迎回来，${result.user.displayName}`)
-            navigate(searchParams.get('back') || '/', { replace: true })
+            navigate(searchParams.get('back') || '/', {replace: true})
         } catch {
 // 拦截器已经弹过 message.error，这里只兜异常防止抛到 UI
         } finally {

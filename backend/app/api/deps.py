@@ -86,4 +86,4 @@ async def enforce_rate_limit(
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentAdmin = Annotated[User, Depends(get_current_admin)]
-RateLimited = Annotated[None, Depends(get_rate_limiter)]
+RateLimited = Annotated[None, Depends(enforce_rate_limit)]

@@ -45,6 +45,7 @@ import {
     getStatusLabel,
     isTerminalStatus,
 } from '@/utils/documentStatus'
+
 import {
     buildDocumentFileUrl,
     canPreviewInline,
@@ -52,6 +53,12 @@ import {
     isMarkdownMime,
     isPdfMime,
 } from '@/utils/documentFile'
+
+import { useRef } from 'react'
+import { Progress } from 'antd'
+import { CloudUploadOutlined } from '@ant-design/icons'
+import { reindexDocument } from '@/client/sdk.gen'
+import type { IngestionTaskRead } from '@/client/types.gen'
 
 
 const { Title, Text, Paragraph } = Typography
@@ -65,6 +72,7 @@ const DELETABLE_STATUSES: ReadonlySet<DocumentRead['status']> = new Set([
     'failed',
     'uploading',
 ])
+
 
 //预览区域
 function PreviewArea({ mimeType, previewUrl }: { mimeType: string; previewUrl: string }) {
@@ -299,6 +307,7 @@ export function DocumentDetailPage() {
 // 仅 ready 时拉取；非 ready 状态下也没有完整 chunks
         enabled: !!id && doc?.status === 'ready',
     })
+
     // 块细节查询
     const chunkDetailQuery = useQuery({
         queryKey: ['documents', 'detail', id, 'chunk', activeChunkId],
@@ -324,6 +333,7 @@ export function DocumentDetailPage() {
             queryClient.invalidateQueries({ queryKey: ['documents'] })
         },
     })
+
     const deleteMutation = useMutation({
         mutationFn: async () => {
             // 调用删除接口操作
@@ -335,6 +345,31 @@ export function DocumentDetailPage() {
             navigate('/documents')
         },
     })
+
+    // 重新索引（增量重建）
+    const reindexMutation = useMutation({
+        mutationFn: async (file: File) => {
+            const res = await reindexDocument({
+                path: { document_id: id },
+                body: { file },
+            })
+            return res.data!
+        },
+        onSuccess: () => {
+            message.success('已提交重新索引，正在解析与增量更新')
+            queryClient.invalidateQueries({ queryKey: ['documents'] })
+        },
+    })
+    const reindexInputRef = useRef<HTMLInputElement>(null)
+    const onPickReindexFile: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+        const file = e.target.files?.[0]
+        if (file) {
+            reindexMutation.mutate(file)
+        }
+        // 清空 input，让相同文件名也能再次触发 onChange
+        e.target.value = ''
+    }
+
     const previewUrl = useMemo(() => buildDocumentFileUrl(id, { download: false }), [id])
     const downloadUrl = useMemo(() => buildDocumentFileUrl(id, { download: true }), [id])
     if (docQuery.isLoading) return <Skeleton active />
@@ -410,7 +445,15 @@ export function DocumentDetailPage() {
                 <Descriptions.Item label="更新时间">
                     {new Date(doc.updated_at).toLocaleString('zh-CN')}
                 </Descriptions.Item>
+                <Descriptions.Item label="版本">
+                    <Tag color="purple">v{doc.version}</Tag>
+                </Descriptions.Item>
             </Descriptions>
+            {doc.latest_task ? (
+                <Card title="最近一次入库任务" style={{ marginBottom: 24 }}>
+                    <IngestionTaskCard task={doc.latest_task} />
+                </Card>
+            ) : null}
             <Card title="原文预览" style={{ marginBottom: 24 }}>
                 <PreviewArea mimeType={doc.mime_type} previewUrl={previewUrl} />
             </Card>
@@ -439,5 +482,67 @@ export function DocumentDetailPage() {
         </div>
     )
 }
+
+
+const TASK_TYPE_LABEL: Record<IngestionTaskRead['task_type'], string> = {
+    ingest: '首次入库',
+    reindex: '增量重建',
+}
+const TASK_STATUS_COLOR: Record<IngestionTaskRead['status'], string> = {
+    pending: 'default',
+    running: 'processing',
+    success: 'success',
+    failed: 'error',
+}
+const TASK_STATUS_LABEL: Record<IngestionTaskRead['status'], string> = {
+    pending: '排队中',
+    running: '执行中',
+    success: '已完成',
+    failed: '失败',
+}
+
+
+function IngestionTaskCard({ task }: { task: IngestionTaskRead }) {
+// pending 阶段还没确定 progress_total，按 0% 展示
+    const percent =
+        task.progress_total > 0
+            ? Math.min(100, Math.round((task.progress_done / task.progress_total) * 100))
+            : 0
+    return (
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Space wrap>
+                <Tag>{TASK_TYPE_LABEL[task.task_type]}</Tag>
+                <Tag color={TASK_STATUS_COLOR[task.status]}>
+                    {TASK_STATUS_LABEL[task.status]}
+                </Tag>
+                <Text type="secondary">
+                    创建于 {new Date(task.created_at).toLocaleString('zh-CN')}
+                </Text>
+            </Space>
+            <Progress
+                percent={percent}
+                status={
+                    task.status === 'failed'
+                        ? 'exception'
+                        : task.status === 'success'
+                            ? 'success'
+                            : 'active'
+                }
+                format={() =>
+                    task.progress_total > 0
+                        ? `${task.progress_done} / ${task.progress_total}`
+                        : task.status === 'success'
+                            ? '完成'
+                            : '等待中'
+                }
+            />
+            {task.error_message ? (
+                <Alert type="error" showIcon message="任务失败" description={task.error_message} />
+            ) : null}
+        </Space>
+    )
+}
+
+
 
 

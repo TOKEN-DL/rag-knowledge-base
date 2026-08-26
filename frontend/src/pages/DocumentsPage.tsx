@@ -267,6 +267,12 @@ export function DocumentsPage() {
             ),
         },
         {
+            title: '版本',
+            dataIndex: 'version',
+            width: 80,
+            render: (version: number) => <Tag color="purple">v{version}</Tag>,
+        },
+        {
             title: '上传时间',
             dataIndex: 'created_at',
             width: 200,

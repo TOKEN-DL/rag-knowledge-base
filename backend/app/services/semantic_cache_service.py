@@ -78,11 +78,17 @@ class SemanticCacheService:
 
         hit = hits[0]
         metadata = hit.get("metadata") or {}
-        if isinstance(metadata, dict):
+        # RedisVL 不同版本对 metadata 的反序列化行为不同：
+        # - 老版本：返回 JSON 字符串，需要手动 json.loads
+        # - 新版本：直接返回 dict
+        # 只在拿到字符串时才走 json.loads，避免对 dict 误调 json.loads 抛 TypeError
+        if isinstance(metadata, str):
             try:
                 metadata = json.loads(metadata)
             except json.JSONDecodeError:
                 metadata = {}
+        elif not isinstance(metadata, dict):
+            metadata = {}
 
         return CachedAnswer(
             answer=hit.get("response", ""),

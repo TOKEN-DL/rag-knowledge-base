@@ -18,8 +18,10 @@ class ConversationRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def create(self, title: str = DEFAULT_CONVERSATION_TITLE) -> Conversation:
-        conversation = Conversation(title=title)
+    async def create(self, title: str = DEFAULT_CONVERSATION_TITLE, *, user_id: UUID) -> Conversation:
+        # user_id 是 conversations.user_id NOT NULL 约束的必填项；
+        # 路由层已经校验登录态，service 把当前用户 id 透传到这里，不能漏
+        conversation = Conversation(title=title, user_id=user_id)
         self.session.add(conversation)
         await self.session.flush()
         return conversation

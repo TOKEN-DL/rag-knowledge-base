@@ -74,7 +74,7 @@ async def stream_chat(
     任何阶段出错改 yield error。前端用 @microsoft/fetch-event-source 接。
     """
     service = ChatService(session)
-    async for sse_event in service.stream_answer(conversation_id, payload.question):
+    async for sse_event in service.stream_answer(conversation_id, payload.question, current_user=user):
         yield ServerSentEvent(
             data=sse_event["data"],
             event=sse_event["event"],

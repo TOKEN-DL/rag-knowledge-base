@@ -13,9 +13,15 @@ class KeywordRetriever:
     def __init__(self, session: AsyncSession) -> None:
         self.chunk_repo = DocumentChunkRepository(session)
 
-    @traceable(name="VectorRetriever.search", run_type="retriever")
-    async def search(self, query: str, top_k: int) -> list[RetrievedChunk]:
-            rows = await self.chunk_repo.keyword_search(query, top_k)
+    @traceable(name="KeywordRetriever.search", run_type="retriever")
+    async def search(
+            self,
+            query: str,
+            top_k: int,
+            *,
+            permission_tags: list[str] | None = None,
+    ) -> list[RetrievedChunk]:
+            rows = await self.chunk_repo.keyword_search(query, top_k, permission_tags=permission_tags)
             return [
                 RetrievedChunk(
                         chunk_id=chunk.id,
@@ -27,7 +33,7 @@ class KeywordRetriever:
                         # ts_rank 没有上界，但在同一查询内的相对大小可比，作为单路 score 直接透出
                         score=ts_rank,
                         sources=("keyword",),
-                        keyword_rank=rank,                
+                        keyword_rank=rank,
                         keyword_score=ts_rank,
                 )
                 for rank, (chunk, ts_rank) in enumerate(rows, start=1)

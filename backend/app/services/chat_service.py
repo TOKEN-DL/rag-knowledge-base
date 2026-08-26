@@ -110,10 +110,10 @@ class ChatService:
         self.session = session
 
 
-    async def create_conversation(self, title: str = "新对话", * , user_id: UUID | None = None) -> Conversation:
+    async def create_conversation(self, title: str = "新对话", * , user_id: UUID) -> Conversation:
         """创建会话"""
         repo = ConversationRepository(self.session)
-        conversation = await repo.create(title=title)
+        conversation = await repo.create(title=title, user_id=user_id)
         await self.session.commit()
         await self.session.refresh(conversation)
         return conversation
