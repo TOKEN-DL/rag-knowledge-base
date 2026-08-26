@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
     Button,
+    Form,
+    Modal,
     Popconfirm,
     Select,
     Space,
@@ -12,7 +14,7 @@ import {
     Upload,
     message,
 } from 'antd'
-import type { TableProps, UploadProps } from 'antd'
+import type { TableProps, UploadFile, UploadProps } from 'antd'
 import {
     DeleteOutlined,
     InboxOutlined,
@@ -32,6 +34,8 @@ import {
     getStatusLabel,
     isTerminalStatus,
 } from '@/utils/documentStatus'
+import { useAuthStore } from '@/stores/authStore'
+import { PermissionTagsField } from '@/components/PermissionTagsField'
 
 
 const { Title, Paragraph } = Typography
@@ -57,16 +61,97 @@ function formatSize(size: number): string {
     return `${(size / 1024 / 1024).toFixed(2)} MB`
 }
 
+interface UploadFormValues {
+    files?: UploadFile[]
+    permission_tags?: string[]
+}
 
 
+interface UploadModalProps {
+    open: boolean
+    uploading: boolean
+    onClose: () => void
+    onUpload: (file: File, tags: string[]) => void
+}
+
+function UploadModal({ open, uploading, onClose, onUpload }: UploadModalProps) {
+    const [form] = Form.useForm<UploadFormValues>()
+    const uploadProps: UploadProps = {
+        multiple: false,
+        accept: ACCEPTED,
+        maxCount: 1,
+        beforeUpload: () => false, // 由表单控制提交
+    }
+    const handleClose = () => {
+        form.resetFields()
+        onClose()
+    }
+    const handleOk = async () => {
+        try {
+            const values = await form.validateFields()
+            const file = values.files?.[0]?.originFileObj as File | undefined
+            if (!file) {
+                message.error('请先选择文件')
+                return
+            }
+            // Windows + 中文 locale 下，浏览器发的 multipart filename 走 UTF-8 字节，
+            // python-multipart 会按系统 locale (gbk) 解码 → 中文文件名变乱码。
+            // 这里把名字 URL-encode 成纯 ASCII 再上传，后端 unquote 还原。
+            const renamed = new File([file], encodeURIComponent(file.name), { type: file.type })
+            onUpload(renamed, values.permission_tags ?? [])
+            form.resetFields()
+            onClose()
+        } catch {
+            // validateFields 失败时 antd 已经展示行内错误，无需再处理
+        }
+    }
+
+    return (
+        <Modal
+            title="上传文档"
+            open={open}
+            onOk={handleOk}
+            onCancel={handleClose}
+            okText="上传"
+            cancelText="取消"
+            confirmLoading={uploading}
+            destroyOnClose
+            maskClosable={!uploading}
+        >
+            <Form<UploadFormValues> form={form} layout="vertical" preserve={false}>
+                <Form.Item
+                    name="files"
+                    label="选择文件"
+                    valuePropName="fileList"
+                    getValueFromEvent={(e) => (Array.isArray(e) ? e : e?.fileList)}
+                    rules={[{ required: true, message: '请选择文件' }]}
+                >
+                    <Upload {...uploadProps}>
+                        <Button icon={<InboxOutlined />}>点击选择文件</Button>
+                    </Upload>
+                </Form.Item>
+                <Form.Item
+                    name="permission_tags"
+                    label="权限标签"
+                    tooltip="留空视为公开文档；填写后只对持有相同标签的用户可见"
+                >
+                    <PermissionTagsField />
+                </Form.Item>
+            </Form>
+        </Modal>
+    )
+}
 
 
 export function DocumentsPage() {
     const [page, setPage] = useState(1)
     const [pageSize, setPageSize] = useState(20)
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+    const [uploadOpen, setUploadOpen] = useState(false)
     const queryClient = useQueryClient()
-    // 查询操作
+    const isAdmin = useAuthStore((s) => Boolean(s.user?.isAdmin))
+
+    // 列表查询
     const listQuery = useQuery({
         queryKey: ['documents', page, pageSize, statusFilter],
         queryFn: async () => {
@@ -79,7 +164,7 @@ export function DocumentsPage() {
             })
             return res.data!
         },
-// 当列表中存在非终态条目时, 每 3 秒轮询一次状态
+        // 当列表中存在非终态条目时，每 3 秒轮询一次状态
         refetchInterval: (query) => {
             const data = query.state.data
             if (!data) return false
@@ -89,10 +174,16 @@ export function DocumentsPage() {
     })
     const invalidateList = () =>
         queryClient.invalidateQueries({ queryKey: ['documents'] })
-    // 上传操作
+
+    // 上传
     const uploadMutation = useMutation({
-        mutationFn: async (file: File) => {
-            const res = await uploadDocument({ body: { file } })
+        mutationFn: async ({ file, tags }: { file: File; tags: string[] }) => {
+            const res = await uploadDocument({
+                body: {
+                    file,
+                    permission_tags: tags.length > 0 ? JSON.stringify(tags) : null,
+                },
+            })
             return res.data!
         },
         onSuccess: (doc) => {
@@ -100,7 +191,8 @@ export function DocumentsPage() {
             invalidateList()
         },
     })
-    // 重试操作
+
+    // 重试
     const retryMutation = useMutation({
         mutationFn: async (id: string) => {
             const res = await retryDocument({ path: { document_id: id } })
@@ -112,7 +204,7 @@ export function DocumentsPage() {
         },
     })
 
-    // 删除操作
+    // 删除
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
             await deleteDocument({ path: { document_id: id } })
@@ -123,24 +215,6 @@ export function DocumentsPage() {
             invalidateList()
         },
     })
-
-    // 上传
-    const uploadProps: UploadProps = useMemo(
-        () => ({
-            multiple: true,
-            accept: ACCEPTED,
-            showUploadList: false,
-            customRequest: ({ file }) => {
-                const f = file as File
-                // Windows + 中文 locale 下，浏览器发的 multipart filename 走 UTF-8 字节，
-                // python-multipart 会按系统 locale (gbk) 解码 → 中文文件名变乱码。
-                // 这里把名字 URL-encode 成纯 ASCII 再上传，后端 unquote 还原。
-                const renamed = new File([f], encodeURIComponent(f.name), { type: f.type })
-                uploadMutation.mutate(renamed)
-            },
-        }),
-        [uploadMutation],
-    )
 
     const columns: TableProps<DocumentRead>['columns'] = [
         {
@@ -168,6 +242,23 @@ export function DocumentsPage() {
         { title: '类型', dataIndex: 'mime_type', width: 220, ellipsis: true },
         { title: '大小', dataIndex: 'size', width: 110, render: formatSize },
         {
+            title: '权限标签',
+            dataIndex: 'permission_tags',
+            width: 200,
+            render: (tags: string[]) =>
+                tags.length === 0 ? (
+                    <Tag>公开</Tag>
+                ) : (
+                    <Space size={4} wrap>
+                        {tags.map((t) => (
+                            <Tag color={t === '*' ? 'gold' : 'blue'} key={t}>
+                                {t}
+                            </Tag>
+                        ))}
+                    </Space>
+                ),
+        },
+        {
             title: '状态',
             dataIndex: 'status',
             width: 110,
@@ -181,7 +272,9 @@ export function DocumentsPage() {
             width: 200,
             render: (value: string) => new Date(value).toLocaleString('zh-CN'),
         },
-        {
+    ]
+    if (isAdmin) {
+        columns.push({
             title: '操作',
             key: 'actions',
             width: 180,
@@ -228,10 +321,8 @@ export function DocumentsPage() {
                     </Space>
                 )
             },
-        },
-    ]
-
-
+        })
+    }
 
     return (
         <div>
@@ -240,15 +331,13 @@ export function DocumentsPage() {
                 支持 PDF、DOCX、Markdown、HTML。上传后后台异步完成解析、切分、向量化与入库，状态会自动刷新。
             </Paragraph>
             <Space style={{ marginBottom: 16 }} wrap>
-                <Upload {...uploadProps}>
-                    <Button
-                        type="primary"
-                        icon={<InboxOutlined />}
-                        loading={uploadMutation.isPending}
-                    >
-                        上传文档
-                    </Button>
-                </Upload>
+                <Button
+                    type="primary"
+                    icon={<InboxOutlined />}
+                    onClick={() => setUploadOpen(true)}
+                >
+                    上传文档
+                </Button>
                 <Button
                     icon={<ReloadOutlined />}
                     onClick={() => listQuery.refetch()}
@@ -281,6 +370,12 @@ export function DocumentsPage() {
                         setPageSize(nextSize)
                     },
                 }}
+            />
+            <UploadModal
+                open={uploadOpen}
+                uploading={uploadMutation.isPending}
+                onClose={() => setUploadOpen(false)}
+                onUpload={(file, tags) => uploadMutation.mutate({ file, tags })}
             />
         </div>
     )

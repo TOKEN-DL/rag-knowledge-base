@@ -49,3 +49,11 @@ class ConflictError(AppException):
     http_status = HTTPStatus.CONFLICT
 
 
+class RateLimitError(AppException):
+    """滑动窗口限流命中"""
+
+    code = "rate_limited"
+    message = "请求过于平凡，请稍后再试"
+    http_status = HTTPStatus.TOO_MANY_REQUESTS
+
+

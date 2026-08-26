@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         # 默认创建默认admin用户
         await seed_default_admin()
+        logger.info("创建默认Admin用户成功")
     except Exception:
         logger.exception("种子初始化失败；后续可重新启动重试")
     yield
@@ -40,7 +41,7 @@ def create_app() -> FastAPI:
     logger = get_logger(__name__)
 
 
-    app = FastAPI(title=settings.app_name)
+    app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     # 跨域配置
     app.add_middleware(

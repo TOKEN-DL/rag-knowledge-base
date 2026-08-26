@@ -16,10 +16,10 @@ export interface AuthUser {
 
 interface AuthState {
     token: string | null
-    user: { id: string; name: string } | null
+    user: AuthUser | null
     ready: boolean
     setAuth: (token: string, user: AuthUser) => void
-    setUser: (user: AuthState) => void
+    setUser: (user: AuthUser) => void
     logout: () => void
     hasToken: () => boolean
     hydrate: () => void
@@ -27,7 +27,7 @@ interface AuthState {
 
 
 function loadUser(): AuthUser | null {
-    const raw = localStorage.getItem(USER_KRY)
+    const raw = localStorage.getItem(USER_KEY)
     if (!raw) return null
     try {
         return JSON.parse(raw) as AuthUser

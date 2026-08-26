@@ -27,6 +27,7 @@ import { QueryRoutePanel } from "@/components/QueryRoutePanel.tsx"
 import { ConversationSidebar} from "@/components/ConversationSidebar.tsx";
 import { Tag } from "antd"
 import { TraceIdPanel } from "@/components/TraceIdPanel.tsx";
+import { useAuthStore } from '@/stores/authStore'
 
 const { Sider, Content} = Layout
 
@@ -35,7 +36,7 @@ const REFUSAL_ANSWER = "抱歉，知识库中没有找到与该问题相关的�
 
 const { Title, Paragraph, Text } = Typography
 const { TextArea } = Input
-const STORAGE_KEY = 'rag.chat.conversation_id'
+const STORAGE_KEY_PREFIX = 'rag.chat.conversation_id'
 type AssistantStatus = 'streaming' | 'done' | 'error'
 
 
@@ -49,10 +50,14 @@ interface UiMessage {
     verifyResult?: VerifyResultRead | null
     traceId?: string | null
     traceUrl?: string | null
+    /** 语义缓存，true 表示本条 assistant 消息来自缓存命中 */
+    cacheHit?: boolean
     refused?: boolean
     status?: AssistantStatus
     error?: string | null
 }
+
+
 function fromServerMessage(m: MessageRead): UiMessage {
     return {
         id: m.id,
@@ -64,6 +69,7 @@ function fromServerMessage(m: MessageRead): UiMessage {
         verifyResult: m.verify_result ?? null,
         traceId: m.trace_id ?? null,
         traceUrl: m.trace_url ?? null,
+        cacheHit: Boolean(m.cache_hit),
         // 历史消息：直接按"内容是否等于固定拒答文案"判定，与后端 metadata.refused 等价
         refused: m.role === 'assistant' && m.content === REFUSAL_ANSWER,
         status: 'done',
@@ -73,8 +79,10 @@ function fromServerMessage(m: MessageRead): UiMessage {
 
 export function ChatPage() {
     const queryClient = useQueryClient()
+    const userId = useAuthStore((s) => s.user?.id)
+    const storageKey = `${STORAGE_KEY_PREFIX}.${userId}`
     const [conversationId, setConversationId] = useState<string | null>(
-        () => localStorage.getItem(STORAGE_KEY),
+        () => localStorage.getItem(storageKey),
     )
     const [draft, setDraft] = useState('')
 // 流式过程中的临时消息（只放在前端 state，结束后由历史接口回填正式 id）
@@ -89,7 +97,7 @@ export function ChatPage() {
             return res.data!
         },
         onSuccess: async (conversation) => {
-            localStorage.setItem(STORAGE_KEY, conversation.id)
+            localStorage.setItem(storageKey, conversation.id)
             setConversationId(conversation.id)
             setPendingMessages([])
 // 失效旧的历史缓存 + 刷新侧栏列表
@@ -113,51 +121,26 @@ export function ChatPage() {
         abortRef.current?.abort()
         createMutation.mutate()
     }
+
     const handleSelectConversation = (id: string) => {
         if (id === conversationId) return
         abortRef.current?.abort()
         setPendingMessages([])
         setIsStreaming(false)
-        localStorage.setItem(STORAGE_KEY, id)
+        localStorage.setItem(storageKey, id)
         setConversationId(id)
     }
+
     const handleConversationDeleted = (deletedId: string) => {
         if (deletedId !== conversationId) return
         abortRef.current?.abort()
         setPendingMessages([])
         setIsStreaming(false)
-        localStorage.removeItem(STORAGE_KEY)
+        localStorage.removeItem(storageKey)
         setConversationId(null)
         queryClient.removeQueries({ queryKey: ['conversation', deletedId] })
     }
 
-
-
-
-
-
-
-
-    // 创建会话：第一次进入页面 / 点"新建对话"时调用
-//     const createMutation = useMutation({
-//         mutationFn: async () => {
-//             const res = await createConversation({ body: { title: '新对话' } })
-//             return res.data!
-//         },
-//         onSuccess: (conversation) => {
-//             localStorage.setItem(STORAGE_KEY, conversation.id)
-//             setConversationId(conversation.id)
-//             setPendingMessages([])
-//             queryClient.removeQueries({ queryKey: ['conversation'] })
-//         },
-//     })
-//     // 没有 conversation_id 时自动创建一个
-//     useEffect(() => {
-//         if (!conversationId && !createMutation.isPending) {
-//             createMutation.mutate()
-//         }
-// // eslint-disable-next-line react-hooks/exhaustive-deps
-//     }, [conversationId])
 
 
     // 拉取历史消息
@@ -193,10 +176,6 @@ export function ChatPage() {
     }, [])
 
 
-    // const handleNewConversation = () => {
-    //     abortRef.current?.abort()
-    //     createMutation.mutate()
-    // }
 
     const updateAssistant = (updater: (prev: UiMessage) => UiMessage) => {
         setPendingMessages((prev) => {
@@ -245,6 +224,7 @@ export function ChatPage() {
                                 ...prev,
                                 traceId: event.traceId,
                                 traceUrl: event.traceUrl,
+                                cacheHit: event.cacheHit,
                             }))
                             break
                         case 'query_route':
@@ -311,6 +291,8 @@ export function ChatPage() {
             abortRef.current = null
         }
     }
+
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 // Shift+Enter 换行；Enter 发送
         if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -503,14 +485,25 @@ function AssistantHeader({ message }: { message: UiMessage }) {
             />
         )
     }
-    if (message.verifyResult?.verified === true) {
-        return (
-            <div style={{ marginBottom: 8 }}>
-                <Tag color="green">已校验</Tag>
-            </div>
+    // 缓存命中与已校验是并列的状态指示，不互斥（命中场景下没有 verify，但允许同时展示）
+    const tags: React.ReactNode[] = []
+    if (message.cacheHit) {
+        tags.push(
+            <Tag key="cache" color="cyan">
+                缓存命中
+            </Tag>,
         )
     }
-    return null
+
+    if (message.verifyResult?.verified === true) {
+        tags.push(
+            <Tag key="verified" color="green">
+                缓存命中
+            </Tag>,
+        )
+    }
+    if (tags.length === 0) return null
+    return <div style={{ marginBottom: 8}}>{{tags}}</div>
 }
 
 interface MessageBubbleProps {

@@ -1,11 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom'
-import { BasicLayout } from '@/layouts/BasicLayout'
-import { HomePage } from '@/pages/HomePage'
-import { DocumentsPage } from "@/pages/DocumentsPage.tsx";
-import { DocumentDetailPage } from "@/pages/DocumentDetailPage.tsx";
-import {ChatPage} from "@/pages/ChatPage.tsx";
-import { EvaluationListPage} from "@/pages/EvaluationListPage.tsx";
-import { EvaluationDetailPage } from "@/pages/EvaluationDetailPage.tsx";
+
 import { createBrowserRouter } from 'react-router-dom'
 import { BasicLayout } from '@/layouts/BasicLayout'
 import { HomePage } from '@/pages/HomePage'
@@ -20,6 +13,8 @@ import { RolesPage } from '@/pages/RolesPage'
 import { RequireAuth } from '@/components/RequireAuth'
 import { RequireAdmin } from '@/components/RequireAdmin'
 
+
+
 export const router = createBrowserRouter([
 
     { path: '/login', element: <LoginPage/>},
@@ -32,7 +27,6 @@ export const router = createBrowserRouter([
                 children: [
                     { index: true, element: <HomePage /> },
                     { path: 'documents', element: <DocumentsPage/>},
-                    { path: 'documents', element: <DocumentsPage/>},
                     { path: 'documents/:id', element: <DocumentDetailPage/>},
                     { path: 'chat', element: <ChatPage/>},
                     {
@@ -40,8 +34,8 @@ export const router = createBrowserRouter([
                         children: [
                             { path: 'evaluation', element: <EvaluationListPage/>},
                             { path: 'evaluation/runs/:id', element: <EvaluationDetailPage/>},
-                            { path: 'user', element: <UsersPage/>},
-                            { path: 'role', element: <RolesPage/>}
+                            { path: 'users', element: <UsersPage/>},
+                            { path: 'roles', element: <RolesPage/>}
                         ],
                     },
 

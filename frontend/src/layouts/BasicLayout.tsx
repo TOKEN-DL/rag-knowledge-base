@@ -1,4 +1,5 @@
-import { Layout , Menu, MenuProps} from "antd";
+import { Layout , Menu} from "antd";
+import type { MenuProps } from "antd";
 import { UserMenu} from "@/components/UserMenu.tsx";
 import { useAuthStore} from "@/stores/authStore.ts";
 
