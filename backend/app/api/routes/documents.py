@@ -6,6 +6,8 @@ from fastapi import APIRouter, BackgroundTasks, File, Query, Response, UploadFil
 from fastapi.params import Header, Form
 import json
 
+from sqlalchemy.sql.functions import user
+
 from app.api.deps import DbSession, CurrentAdmin, CurrentUser
 from app.api.schemas.documents import (
     DocumentChunkDetail,
@@ -85,9 +87,9 @@ async def list_documents(
     )
 
 @router.get("/{document_id}", response_model=DocumentRead, operation_id="getDocument")
-async def get_document(document_id: UUID, session: DbSession) -> DocumentRead:
+async def get_document(user: CurrentUser,document_id: UUID, session: DbSession) -> DocumentRead:
     service = DocumentService(session)
-    document = await service.get(document_id)
+    document = await service.get(document_id, permission_tags=_viewer_tags(user))
     return DocumentRead.model_validate(document)
 
 
@@ -106,6 +108,7 @@ async def delete_document(
     operation_id="retryDocument",
 )
 async def retry_document(
+        _: CurrentAdmin,
         document_id: UUID,
         session: DbSession,
         background_tasks: BackgroundTasks,
@@ -158,6 +161,7 @@ async def download_document(
 
 @router.get("/{document_id}/chunks",response_model=DocumentChunkListResponse, operation_id="listDocumentChunks")
 async def list_document_chunks(
+        user: CurrentUser,
         document_id: UUID,
         session: DbSession,
         page: int = Query(1, ge=1),
@@ -165,7 +169,7 @@ async def list_document_chunks(
 ) -> DocumentChunkListResponse:
     """获取chunk列表"""
     service = DocumentService(session)
-    items, total, stats = await service.list_chunks(document_id, page, page_size)
+    items, total, stats = await service.list_chunks(document_id, page, page_size, permission_tags=_viewer_tags(user))
     return DocumentChunkListResponse(
         items=[DocumentChunkRead.from_orm_chunk(c) for c in items],
         total=total,
@@ -188,13 +192,14 @@ async def list_document_chunks(
     operation_id="getDocumentChunk",
 )
 async def get_document_chunk(
+        user: CurrentUser,
         document_id: UUID,
         chunk_id: UUID,
         session: DbSession,
 ) -> DocumentChunkDetail:
     """获取chunk内容"""
     service = DocumentService(session)
-    chunk = await service.get_chunk(document_id, chunk_id)
+    chunk = await service.get_chunk(document_id, chunk_id, permission_tags=_viewer_tags(user))
     return DocumentChunkDetail.from_orm_chunk(chunk)
 
 
