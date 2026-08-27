@@ -61,4 +61,4 @@ def build_trace_url(trace_id: str | None) -> str | None:
     """
     if not trace_id or not settings.langsmith_run_url_prefix:
         return None
-    return f"{settings.langsmith_run_url_prefix.rsplit('/')}/r/{trace_id}"
+    return f"{settings.langsmith_run_url_prefix.rstrip('/')}/r/{trace_id}"

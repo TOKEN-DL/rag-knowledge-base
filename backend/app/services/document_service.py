@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime
 from pathlib import PurePath
 from urllib.parse import unquote
 from uuid import UUID
@@ -23,6 +24,7 @@ from app.storage.file_service import FileService, get_file_service
 
 from app.db.repositories.ingestion_task_repo import IngestionTaskRepository
 from app.ingestion.tasks import ingest_document_task, reindex_document_task
+from dataclasses import dataclass
 
 # 受支持的 MIME 类型。
 _ACCEPTED_MIME_TYPES: dict[str, str] = {
@@ -33,6 +35,8 @@ _ACCEPTED_MIME_TYPES: dict[str, str] = {
 "text/html": ".html",
 "application/xhtml+xml": ".html",
 }
+
+
 
 _ACCEPTED_SUFFIXES: dict[str, str] = {
 ".pdf": "application/pdf",
@@ -71,6 +75,20 @@ _DELETABLE_STATUSES = frozenset(
 logger = get_logger(__name__)
 
 
+@dataclass(frozen=True)
+class KnowledgeBaseStats:
+    """知识库整体规模快照，按调用者权限范围统计。
+
+    chunk_count 仅计入 status='ready' 的文档，与检索可见性一致；
+    last_indexed_at 取最近一次 ready 文档的 updated_at（含 reindex 后的刷新）。
+    """
+
+    document_count: int
+    chunk_count: int
+    last_indexed_at: datetime | None
+
+
+
 
 # 通过给Document的管理方法添加上permission_tags
 # 实现有相关权限的用户才能访问
@@ -81,6 +99,31 @@ class DocumentService:
         self.chunk_repo = DocumentChunkRepository(session)
         self.task_repo = IngestionTaskRepository(session)
         self.file_service = file_service or get_file_service()
+
+
+    async def get_stats(
+            self,
+            *,
+            permission_tags: list[str] | None = None,
+    ) -> KnowledgeBaseStats:
+        """聚合 documents / chunks 总数与最新入库时间。
+
+        permission_tags：admin 视角传 None 不限；普通用户传合并后的有效标签，
+        三处统计 SQL 共用 `_permission_where` 保证可见性一致。
+        """
+
+        document_count = await self.repo.count(permission_tags=permission_tags)
+        chunk_count = await self.chunk_repo.count_visible(
+            permission_tags=permission_tags,
+        )
+        last_indexed_at = await self.repo.get_last_indexed_at(
+            permission_tags=permission_tags,
+        )
+        return KnowledgeBaseStats(
+            document_count=document_count,
+            chunk_count=chunk_count,
+            last_indexed_at=last_indexed_at,
+        )
 
 
     async def upload(

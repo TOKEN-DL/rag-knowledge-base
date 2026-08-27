@@ -288,7 +288,7 @@ function ItemDetailDrawer({
                         {citations.length > 0 && (
                             <CitationList citations={citations} messageId={item.id} />
                         )}
-                        <TraceIdPanel traceId={item.trace_id} />
+                        <TraceIdPanel traceId={item.trace_id} traceUrl={item.trace_url} />
                         <Space size={12} style={{ marginTop: 8 }} wrap>
                             <Text type="secondary">端到端：{item.latency_ms} ms</Text>
                             <Text type="secondary">

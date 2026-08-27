@@ -68,42 +68,7 @@ frontend/.vite/
 # openapi-typescript 自动生成的接口类型，不进 git，由 `npm run gen:api` 生成
 frontend/src/types/schema.d.ts
 
-# 虚拟环境
-.venv/
-venv/
-env/
-ENV/
-.python-version
-# 测试与覆盖率
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-.tox/
-.nox/
-coverage.xml
-*.cover
-.hypothesis/
-# 类型检查 / lint 缓存
-.mypy_cache/
-.dmypy.json
-.pyre/
-.pytype/
-.ruff_cache/
-# Jupyter
-.ipynb_checkpoints/
-# ===== Node / 前端 =====
-node_modules/
-.pnp/
-.pnp.js
-.yarn/install-state.gz
-# 构建产物
-frontend/dist/
-frontend/build/
-frontend/.vite/
-*.local
-# openapi-typescript 自动生成的接口类型，不进 git，由 `npm run gen:api` 生成
-frontend/src/types/schema.d.ts
+
 
 # ===== 项目相关 =====
 # 本地数据 / 上传文件 / 解析中间产物

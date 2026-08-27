@@ -116,6 +116,7 @@ class CitationRead(BaseModel):
             document_name=citation.document_name,
             page_no=citation.page_no,
             quote=citation.quote,
+            retrieval_meta=_parse_retrieval_meta(citation.retrieval_meta),
         )
 
 def _parse_retrieval_meta(raw: dict | None) -> RetrievalMeta | None:

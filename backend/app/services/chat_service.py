@@ -93,8 +93,19 @@ class EvaluationAnswer:
     error_message: str | None = None
     citations: list[dict] = field(default_factory=list)
 
+@dataclass(frozen=True)
+class MCPChatAnswer:
+    """MCP `ask_knowledge_base` 工具的非流式问答结果。
 
+    与评测路径不同的是：MCP 调用方是真实用户（持 JWT），需要按其权限标签
+    过滤检索结果；与 stream_answer 不同的是：不创建 conversation、不写
+    user / assistant 消息，外部 Agent 自己管多轮上下文。
+    """
 
+    answer: str
+    refused: bool
+    citations: list[dict]
+    trace_id: str | None
 
 
 
@@ -150,6 +161,77 @@ class ChatService:
         if not deleted:
             raise NotFoundError("会话不存在")
         await self.session.commit()
+
+
+    @traceable(name="ChatService.answer_for_mcp", run_type="chain")
+    async def answer_for_mcp(
+            self,
+            question: str,
+            *,
+            current_user: User
+    ) -> MCPChatAnswer:
+        """MCP `ask_knowledge_base` 工具入口：跑一次完整 RAG 拿非流式结果。
+
+        与 stream_answer 的差异：
+        - 不创建 conversation、不写 user / assistant 消息（MCP 调用不污染会话历史）
+        - chat_history 强制空：外部 Agent 自管多轮，contextualize 改写自动跳过
+        - 把流式 token 聚合成完整 answer 后再做 verify_answer 校验
+        - 异常**直接 raise**，由 tool 层翻译成 ToolError 给 Agent
+
+        与 answer_for_evaluation 的差异：
+        - 真实用户身份：按 `permission_tags` 过滤检索；评测一律用 ["*"] 通配
+        - 不记录延迟指标 / error_message：调用方失败时直接抛出更直观
+        """
+        permissions = compute_user_permission_tags(current_user)
+        trace_id = get_current_trace_id()
+        state: RAGState = {
+            "conversation_id": UUID(int=0),
+            "question": question,
+            "chat_history": [],
+            "permissions": permissions,
+            "trace_id": trace_id,
+        }
+
+        final_state = await get_rag_graph().ainvoke(state)
+        state.update(final_state)
+
+        if state.get("refused"):
+            answer = state["answer"]
+
+        else:
+            parts: list[str] = []
+            async for delta in stream_generate(state):
+                parts.append(delta)
+            answer = "".join(parts)
+            state["answer"] = answer
+
+            if settings.verify_answer_enabled:
+                verify_result = await get_answer_verifier().verify(
+                    question=question,
+                    answer=answer,
+                    chunks=list(state.get("retrieved_chunks", [])),
+                )
+                if not verify_result.verified:
+                    answer = REFUSAL_ANSWER
+                    state["answer"] = answer
+                    state["refused"] = True
+
+            refused = bool(state.get("refused"))
+            citations = (
+                []
+                if refused
+                else [
+                    _serialize_citation(c, ordinal=i)
+                    for i, c in enumerate(state.get("retrieved_chunks", []), start=1)
+                ]
+            )
+            return MCPChatAnswer(
+                answer=answer,
+                refused=refused,
+                citations=citations,
+                trace_id=trace_id,
+            )
+
 
 
 
@@ -295,10 +377,6 @@ class ChatService:
                     ):
                         yield event
                     return
-
-
-
-
 
                 # 3. 跑 RAG 子图：normalize_query → route_query → 检索决策循环
                 # 把一些节点操作整合成了图数据
@@ -617,6 +695,8 @@ class ChatService:
         await session.commit()
         state["assistant_message_id"] = assistant_msg.id
 
+
+
 def _build_query_route_payload(state: RAGState) -> dict:
     """SSE / metadata 共用的 query_route 载荷格式。
         始终携带 4 个可选字段（None 也保留），前端可据此判断展示哪种调试面板。
@@ -632,7 +712,7 @@ def _build_query_route_payload(state: RAGState) -> dict:
 def _build_retrieval_meta(chunk: RetrievedChunk) -> dict:
     """混合检索调试元数据"""
     return {
-        "source": list(chunk.sources),
+        "sources": list(chunk.sources),
         "vector_rank": chunk.vector_rank,
         "vector_score":(
             round(chunk.vector_score, 4) if chunk.vector_score is not None else None

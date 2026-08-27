@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+from app.core.observability import build_trace_url
 
 EvaluationStatusValue = Literal["running", "completed", "failed"]
 
@@ -116,6 +118,13 @@ class EvaluationItemRead(BaseModel):
     bad_case_category: BadCaseCategoryValue | None = None
     bad_case_note: str | None = None
     created_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def trace_url(self) -> str | None:
+        """LangSmith 跳转 URL；与 MessageRead.trace_url 同源，
+        未配置 LANGSMITH_RUN_URL_PREFIX 时为 None，前端只展示复制按钮。"""
+        return build_trace_url(self.trace_id)
 
 
 class EvaluationItemPage(BaseModel):
