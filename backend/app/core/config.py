@@ -21,9 +21,11 @@ class Settings(BaseSettings):
     app_name : str = "rag-knowledge-base"
     log_level: str = "INFO"
 
+    # 数据库设置
+
     database_url : str = "postgresql+asyncpg://rag:rag@localhost:5432/rag_kb"
 
-
+    # COS设置
     cos_secret_id : str = os.getenv("COS_SECRET_ID")
     cos_secret_key : str = os.getenv("COS_SECRET_KEY")
     cos_region: str = "ap-guangzhou"

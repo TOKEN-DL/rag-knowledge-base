@@ -86,3 +86,6 @@ celerybeat-schedule
 celerybeat.pid
 # Alembic 本地配置（如有）
 alembic.ini.local
+# local SSH workarounds
+/.ssh_temp/
+
