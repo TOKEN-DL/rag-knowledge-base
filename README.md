@@ -1,5 +1,7 @@
 # RAG Knowledge Base
 
+[English](README.en.md) | [简体中文](README.md)
+
 一套面向中文场景的**生产级 RAG 知识库问答系统**。后端基于 **FastAPI + LangGraph** 编排完整的 Agentic RAG 工作流,前端使用 **React 19 + Antd 6** 提供日常问答与运维界面,同时通过 **FastMCP** 把核心能力以工具形式开放给外部 Agent,可被 Claude / Cursor / 自研 Agent 等直接调用。
 
 > 项目覆盖了一条真实可用的 RAG 链路:多格式文档入库 → 中文友好的混合检索 → Query 路由与多轮改写 → Rerank 精排 → 答案校验 → 拒答闸门 → 引用级可观测;并配套权限、限流、缓存、增量索引、自动化评测等工程能力。
